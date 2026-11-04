@@ -1,0 +1,32 @@
+{
+  "name": "pr-review-lsp",
+  "version": "0.1.0",
+  "description": "Language server that surfaces GitHub pull-request review feedback in the editor (diagnostics, hover, code actions, drafts). Companion to the Zed extension of the same name.",
+  "license": "MIT",
+  "bin": {
+    "pr-review-lsp": "dist/server.js"
+  },
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.js",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0",
+    "vscode-languageserver": "^9.0.0",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}
