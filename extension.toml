@@ -1,0 +1,12 @@
+id = "pr-review-lsp"
+name = "Pull Request Review"
+version = "0.1.0"
+schema_version = 1
+authors = ["Tyler <tyler@example.com>"]
+description = "Review pull requests and respond to review feedback directly in your buffers: inline comment highlights, tooltips, quick fixes, reactions, and review submission."
+repository = "https://github.com/tyler/pr-review-lsp"
+license = "MIT"
+
+[language_servers.pr-review-lsp]
+name = "Pull Request Review"
+languages = ["Plain Text", "Markdown", "Rust", "Python", "JavaScript", "TypeScript", "TypeScript V2", "JSON", "JSONC", "YAML", "TOML", "HTML", "CSS", "Go", "C", "C++", "C#", "Java", "Ruby", "PHP", "Kotlin", "Elixir", "Shell Script", "Dockerfile"]
