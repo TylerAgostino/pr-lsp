@@ -3,3 +3,4 @@ dist/
 target/
 *.vsix
 .DS_Store
+tmp/
