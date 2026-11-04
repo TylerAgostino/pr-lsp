@@ -1,28 +1,23 @@
 import {
   createConnection,
   TextDocuments,
+  TextDocumentSyncKind,
   type Connection,
   type InitializeParams,
   type InitializeResult,
-  TextDocumentSyncKind,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { ALL_COMMANDS } from "./commands";
 import { configFromSettings, type EffectiveConfig } from "./config";
+import { buildHoverMarkdown } from "./hover";
+import { buildInlayHints } from "./inlayhints";
+import { AppState } from "./state";
 
 export interface ServerHost {
   connection: Connection;
   documents: TextDocuments<TextDocument>;
   config: EffectiveConfig;
   workspaceRoot: string | null;
-}
-
-/**
- * Pull-request context for the current workspace branch. Resolved in step 3;
- * until then the server stays silent (empty diagnostics, no actions).
- */
-export interface Context {
-  resolved: boolean;
 }
 
 export function createHost(): ServerHost {
@@ -38,6 +33,7 @@ export function createHost(): ServerHost {
 
 export function wireLifecycle(host: ServerHost): void {
   const { connection } = host;
+  const state = new AppState(host);
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
     host.workspaceRoot =
@@ -48,7 +44,11 @@ export function wireLifecycle(host: ServerHost): void {
 
     return {
       capabilities: {
-        textDocumentSync: TextDocumentSyncKind.Incremental,
+        textDocumentSync: {
+          openClose: true,
+          change: TextDocumentSyncKind.Incremental,
+          save: { includeText: false },
+        },
         hoverProvider: true,
         codeActionProvider: true,
         inlayHintProvider: true,
@@ -57,27 +57,57 @@ export function wireLifecycle(host: ServerHost): void {
     };
   });
 
+  connection.onInitialized(() => {
+    void state.refresh().then(() => state.publishAll());
+  });
+
   connection.onDidChangeConfiguration(({ settings }) => {
     host.config = configFromSettings(settings);
   });
 
   host.documents.onDidOpen((e) => {
-    void refreshDiagnosticsForDocument(host, e.document.uri);
+    state.savedVersions.set(e.document.uri, e.document.version);
+    void (async () => {
+      await state.refresh();
+      await state.publishForDoc(e.document.uri);
+    })();
   });
+
+  host.documents.onDidSave((e) => {
+    const doc = host.documents.get(e.document.uri);
+    if (doc) state.savedVersions.set(doc.uri, doc.version);
+    void state.publishForDoc(e.document.uri);
+  });
+
+  host.documents.onDidClose((e) => {
+    state.savedVersions.delete(e.document.uri);
+  });
+
+  connection.onHover((params) => {
+    const doc = host.documents.get(params.textDocument.uri);
+    if (!doc || !state.pr) return null;
+    const hits = state
+      .anchoredThreadsForDoc(doc)
+      .filter((t) => t.anchor.line === params.position.line);
+    const md = buildHoverMarkdown(state.pr.number, state.pr.html_url, hits, Date.now());
+    if (md === null) return null;
+    return { contents: { kind: "markdown", value: md } };
+  });
+  connection.languages.inlayHint.on((params) => {
+    const doc = host.documents.get(params.textDocument.uri);
+    if (!doc || !state.pr || !host.config.inlayHints) return [];
+    const positions = new Map<number, number>();
+    for (const t of state.anchoredThreadsForDoc(doc)) {
+      positions.set(t.anchor.line, (positions.get(t.anchor.line) ?? 0) + 1);
+    }
+    const lineLengths = doc.getText().split(/\r?\n/).map((l) => l.length);
+    return buildInlayHints(state.pr.number, lineLengths, positions);
+  });
+
+  connection.onCodeAction(() => []);
 
   connection.listen();
   host.documents.listen(connection);
-}
-
-/**
- * Publish diagnostics for one open document. Step 2: always empty (no PR
- * data yet); later steps resolve anchors and publish real threads.
- */
-export async function refreshDiagnosticsForDocument(
-  host: ServerHost,
-  _uri: string,
-): Promise<void> {
-  host.connection.sendDiagnostics({ uri: _uri, diagnostics: [] });
 }
 
 if (require.main === module || process.argv[1]?.endsWith("server.js")) {

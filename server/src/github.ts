@@ -43,6 +43,8 @@ export interface ReviewComment {
   html_url: string;
   pull_request_url: string;
   commit_id: string;
+  /** 1-based index within diff_hunk (including @@ header); null when unmapped. */
+  position: number | null;
   in_reply_to_id: number | null;
   reactions: ReactionCounts;
 }
@@ -116,6 +118,7 @@ export function parseReviewComment(v: unknown): ReviewComment | null {
     side: v.side === "LEFT" ? "LEFT" : "RIGHT",
     diff_hunk: str(v.diff_hunk),
     user,
+    position: optNum(v.position),
     created_at: str(v.created_at),
     html_url: str(v.html_url),
     pull_request_url: str(v.pull_request_url),
