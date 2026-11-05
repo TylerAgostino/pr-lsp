@@ -53,6 +53,9 @@ export class TestClient {
       new StreamMessageWriter(this.proc.stdin),
     );
     this.conn.onNotification((method, params) => {
+      if (method === "window/showMessage" || method === "window/logMessage") {
+        console.log(`[server ${method}]`, JSON.stringify(params));
+      }
       this.notifications.push({ method, params });
       for (const w of [...this.waiters]) {
         if (w.method === method && w.pred(params)) {
@@ -130,7 +133,7 @@ export class TestClient {
   }
 
   execCommand(command: string, args?: unknown[]) {
-    return this.conn.sendRequest("workspace/executeCommand", { command, args });
+    return this.conn.sendRequest("workspace/executeCommand", { command, arguments: args ?? [] });
   }
 
   waitForNotification(

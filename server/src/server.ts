@@ -1,3 +1,5 @@
+import { TextDocument } from "vscode-languageserver-textdocument";
+import { CodeActionKind, type CodeAction } from "vscode-languageserver";
 import {
   createConnection,
   TextDocuments,
@@ -6,8 +8,17 @@ import {
   type InitializeParams,
   type InitializeResult,
 } from "vscode-languageserver/node";
-import { TextDocument } from "vscode-languageserver-textdocument";
-import { ALL_COMMANDS } from "./commands";
+import {
+  ALL_COMMANDS,
+  CMD_CREATE_COMMENT_DRAFT,
+  CMD_DRAFT_REVIEW,
+  CMD_REACT,
+  CMD_REFRESH,
+  CMD_RESOLVE_THREAD,
+  CMD_SUMMARY,
+  CMD_VIEW_ON_GITHUB,
+  REACTIONS,
+} from "./commands";
 import { configFromSettings, type EffectiveConfig } from "./config";
 import { buildHoverMarkdown } from "./hover";
 import { buildInlayHints } from "./inlayhints";
@@ -18,6 +29,14 @@ export interface ServerHost {
   documents: TextDocuments<TextDocument>;
   config: EffectiveConfig;
   workspaceRoot: string | null;
+}
+
+function quickFix(title: string, command: string, args: unknown[]): CodeAction {
+  return {
+    title,
+    kind: CodeActionKind.QuickFix,
+    command: { title, command, arguments: args },
+  };
 }
 
 export function createHost(): ServerHost {
@@ -76,7 +95,10 @@ export function wireLifecycle(host: ServerHost): void {
   host.documents.onDidSave((e) => {
     const doc = host.documents.get(e.document.uri);
     if (doc) state.savedVersions.set(doc.uri, doc.version);
-    void state.publishForDoc(e.document.uri);
+    void (async () => {
+      if (await state.handleDraftSave(e.document.uri)) return;
+      await state.publishForDoc(e.document.uri);
+    })();
   });
 
   host.documents.onDidClose((e) => {
@@ -104,7 +126,84 @@ export function wireLifecycle(host: ServerHost): void {
     return buildInlayHints(state.pr.number, lineLengths, positions);
   });
 
-  connection.onCodeAction(() => []);
+  connection.onCodeAction((params) => {
+    const doc = host.documents.get(params.textDocument.uri);
+    if (!doc || !state.pr) return [];
+    const actions: CodeAction[] = [];
+    const anchored = state.anchoredThreadsForDoc(doc);
+    const sel = params.range;
+    const hits = anchored.filter((t) => t.anchor.line >= sel.start.line && t.anchor.line <= sel.end.line);
+    for (const t of hits) {
+      for (const r of REACTIONS) {
+        actions.push(quickFix(`React ${r.emoji}`, CMD_REACT, [t.top.id, r.content]));
+      }
+      actions.push(quickFix(`Reply to @${t.top.user?.login ?? "commenter"}…`, CMD_CREATE_COMMENT_DRAFT, [doc.uri, t.anchor.line + 1, t.top.id]));
+      if (t.threadId) {
+        const resolved = t.isResolved === true;
+        actions.push(quickFix(resolved ? "Unresolve thread" : "Resolve thread", CMD_RESOLVE_THREAD, [t.threadId, !resolved]));
+      }
+      actions.push(quickFix("View on GitHub", CMD_VIEW_ON_GITHUB, [t.top.html_url]));
+    }
+    const selectionNonEmpty =
+      sel.start.line !== sel.end.line || sel.start.character !== sel.end.character;
+    if (selectionNonEmpty) {
+      const rel = state.relativePath(doc.uri);
+      if (rel) {
+        actions.push(quickFix("Add PR review comment…", CMD_CREATE_COMMENT_DRAFT, [doc.uri, sel.start.line + 1]));
+      }
+    }
+    return actions;
+  });
+
+  connection.onExecuteCommand(async (params) => {
+    const args = params.arguments ?? [];
+    try {
+      switch (params.command) {
+        case CMD_REFRESH:
+          await state.refresh(true);
+          await state.publishAll();
+          break;
+        case CMD_REACT:
+          await state.reactTo(Number(args[0]), String(args[1]));
+          break;
+        case CMD_RESOLVE_THREAD:
+          await state.toggleThread(String(args[0]), args[1] !== false);
+          break;
+        case CMD_VIEW_ON_GITHUB:
+          state.viewOnGithub(String(args[0]));
+          break;
+        case CMD_CREATE_COMMENT_DRAFT: {
+          if (args.length >= 3 && args[2] !== null && args[2] !== undefined) {
+            state.createReplyDraft(Number(args[2]));
+            break;
+          }
+          const rel = state.relativePath(String(args[0]));
+          if (rel) state.createCommentDraft(rel, Number(args[1]));
+          break;
+        }
+        case CMD_DRAFT_REVIEW:
+          state.createReviewDraft();
+          break;
+        case CMD_SUMMARY: {
+          await state.refresh(true);
+          if (!state.pr) {
+            void connection.window.showInformationMessage("pr-review: no open PR for this branch");
+            break;
+          }
+          const top = state.comments.filter((c) => c.in_reply_to_id === null);
+          void connection.window.showInformationMessage(
+            `pr-review: PR #${state.pr.number} · ${top.length} threads · ${state.countStale()} outdated`,
+          );
+          break;
+        }
+        default:
+          break;
+      }
+    } catch (e) {
+      void connection.window.showErrorMessage(`pr-review: ${String(e instanceof Error ? e.message : e)}`);
+    }
+    return null;
+  });
 
   connection.listen();
   host.documents.listen(connection);

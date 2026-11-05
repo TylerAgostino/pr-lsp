@@ -133,10 +133,15 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
     if (mm && method === "POST") {
       const n = Number(mm[1]);
       const parentId = Number(mm[2]);
+      const parent = state.comments.find((c) => c.id === parentId) ?? {};
       const created: Record<string, unknown> = {
         ...(isRecord(body) ? body : {}),
         id: state.nextCommentId++,
         in_reply_to_id: parentId,
+        path: parent.path,
+        line: parent.line,
+        original_line: parent.original_line,
+        commit_id: parent.commit_id,
         user: { login: "testuser" },
         html_url: `https://github.com/${state.owner}/${state.repo}/pull/${n}#discussion_new`,
         pull_request_url: `${repoPrefix}/pulls/${n}`,
