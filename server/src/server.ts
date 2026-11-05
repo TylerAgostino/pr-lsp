@@ -213,8 +213,10 @@ export function wireLifecycle(host: ServerHost): void {
     return null;
   });
 
-  connection.listen();
+  // Document handlers must be installed before the RPC loop starts, or an
+  // early didOpen can race past them.
   host.documents.listen(connection);
+  connection.listen();
 }
 
 if (require.main === module || process.argv[1]?.endsWith("server.js")) {

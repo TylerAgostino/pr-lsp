@@ -7,11 +7,15 @@
     "pr-review-lsp": "dist/server.js"
   },
   "main": "dist/server.js",
+  "files": [
+    "dist/server.js"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.js",
+    "prepack": "npm run build",
     "pretest": "npm run build",
     "test": "vitest run",
     "check": "tsc --noEmit"

@@ -39,15 +39,11 @@ Only GitHub is supported (github.com and GitHub Enterprise via
 
 ## Extension capabilities
 
-The adapter needs these capabilities (approve when Zed prompts, or add to
-your `settings.json`):
-
-```json
-"granted_extension_capabilities": [
-  { "kind": "npm:install", "package": "pr-review-lsp" },
-  { "kind": "process:exec", "program": "gh" }
-]
-```
+The capabilities this extension uses are declared in `extension.toml`
+(`gh auth token` for the token fallback, `npm:install` for the language
+server package). Nothing to configure — see
+[Extension Capabilities](https://zed.dev/docs/extensions/extension-capabilities)
+for how Zed surfaces these to you.
 
 ## Settings
 
