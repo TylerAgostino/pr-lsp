@@ -96,7 +96,17 @@ export class AppState {
     }
     const [comments, threads] = await Promise.all([
       client.listReviewComments(owner, repo, pr.number),
-      client.getThreads(owner, repo, pr.number),
+      // Thread state comes from GraphQL; if it fails (scope/API errors),
+      // annotations must still work — Resolve/Unresolve actions just stay
+      // hidden until the next successful pass.
+      client
+        .getThreads(owner, repo, pr.number)
+        .catch((e) => {
+          this.log(
+            `could not fetch review thread state (resolve/unresolve unavailable): ${String(e instanceof Error ? e.message : e)}`,
+          );
+          return new Map<number, ThreadState>();
+        }),
     ]);
     this.comments = comments;
     this.threadStates = threads;
