@@ -22,6 +22,8 @@ export class AppState {
   savedVersions = new Map<string, number>();
 
   private refreshed: Promise<void> | null = null;
+  private running = false;
+  private followUp = false;
 
   constructor(readonly host: ServerHost) {}
 
@@ -40,15 +42,27 @@ export class AppState {
     return new GithubClient(this.host.config, token);
   }
 
-  /** (Re)resolve repo + PR data. Concurrent calls share one pass. */
+  /**
+   * (Re)resolve repo + PR data. At most one pass runs at a time; concurrent
+   * non-forced calls share it, and a forced call arriving mid-pass schedules
+   * one follow-up pass so mutations are never missed.
+   */
   refresh(force = false): Promise<void> {
-    if (this.refreshed && !force) return this.refreshed;
+    if (this.running) {
+      if (force) this.followUp = true;
+      return this.refreshed ?? Promise.resolve();
+    }
+    this.running = true;
     const run = async (): Promise<void> => {
-      try {
-        await this.refreshInner();
-      } catch (e) {
-        this.log(`refresh failed: ${String(e instanceof Error ? e.message : e)}`);
-      }
+      do {
+        this.followUp = false;
+        try {
+          await this.refreshInner();
+        } catch (e) {
+          this.log(`refresh failed: ${String(e instanceof Error ? e.message : e)}`);
+        }
+      } while (this.followUp);
+      this.running = false;
     };
     this.refreshed = run();
     return this.refreshed;
@@ -159,6 +173,54 @@ export class AppState {
 
   async publishAll(): Promise<void> {
     for (const doc of this.host.documents.all()) await this.publishForDoc(doc.uri);
+  }
+
+  private pollTimer: NodeJS.Timeout | null = null;
+  private lastHeadKey: string | null = null;
+  private pollInFlight = false;
+
+  /**
+   * Background poll: every interval re-fetches GitHub state (new comments,
+   * resolutions); a .git/HEAD change (branch switch) is logged and handled by
+   * the same refresh, which re-resolves repo + PR.
+   */
+  startBackgroundPoll(): void {
+    if (this.pollTimer || !this.repo) return;
+    const headFile = path.join(this.repo.root, ".git", "HEAD");
+    const readHead = (): string | null => {
+      try {
+        return fs.readFileSync(headFile, "utf8");
+      } catch {
+        return null;
+      }
+    };
+    this.lastHeadKey = readHead();
+    this.pollTimer = setInterval(() => {
+      const key = readHead();
+      if (key !== null && key !== this.lastHeadKey) {
+        this.lastHeadKey = key;
+        this.log("branch changed; refreshing pull request context");
+      }
+      void this.backgroundTick();
+    }, Math.max(200, this.host.config.pollIntervalMs));
+  }
+
+  private async backgroundTick(): Promise<void> {
+    if (this.pollInFlight) return;
+    this.pollInFlight = true;
+    try {
+      await this.refresh(true);
+      await this.publishAll();
+    } catch (e) {
+      this.log(`background refresh failed: ${String(e instanceof Error ? e.message : e)}`);
+    } finally {
+      this.pollInFlight = false;
+    }
+  }
+
+  stopBackgroundPoll(): void {
+    clearInterval(this.pollTimer ?? undefined);
+    this.pollTimer = null;
   }
 
   private requireClient(): GithubClient {

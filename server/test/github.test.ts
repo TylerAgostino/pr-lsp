@@ -9,7 +9,7 @@ import { emptyState, startFakeGithub, type FakeGithub } from "./fake-github";
 import { makeFixtureRepo, type FixtureRepo } from "./fixtures/repo";
 
 function cfgWith(baseUrl: string): EffectiveConfig {
-  return { githubBaseUrl: baseUrl, inlayHints: true, draftsDir: ".git/pr-review" };
+  return { githubBaseUrl: baseUrl, inlayHints: true, draftsDir: ".git/pr-review", pollIntervalMs: 30_000 };
 }
 
 function seedComment(opts: {

@@ -45,7 +45,7 @@ export function createHost(): ServerHost {
   return {
     connection,
     documents,
-    config: { githubBaseUrl: "", inlayHints: true, draftsDir: ".git/pr-review" },
+    config: { githubBaseUrl: "", inlayHints: true, draftsDir: ".git/pr-review", pollIntervalMs: 30_000 },
     workspaceRoot: null,
   };
 }
@@ -77,7 +77,15 @@ export function wireLifecycle(host: ServerHost): void {
   });
 
   connection.onInitialized(() => {
-    void state.refresh().then(() => state.publishAll());
+    void (async () => {
+      await state.refresh();
+      await state.publishAll();
+      state.startBackgroundPoll();
+    })();
+  });
+
+  connection.onShutdown(() => {
+    state.stopBackgroundPoll();
   });
 
   connection.onDidChangeConfiguration(({ settings }) => {

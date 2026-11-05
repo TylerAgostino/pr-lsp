@@ -15,18 +15,22 @@ export interface EffectiveConfig {
   inlayHints: boolean;
   /** Directory (workspace-relative) holding draft files. */
   draftsDir: string;
+  /** Milliseconds between background .git/HEAD checks (branch switch refresh). */
+  pollIntervalMs: number;
 }
 
 export const DEFAULT_CONFIG: EffectiveConfig = {
   githubBaseUrl: "",
   inlayHints: true,
   draftsDir: ".git/pr-review",
+  pollIntervalMs: 30_000,
 };
 
 interface RawSettings {
   githubBaseUrl?: unknown;
   inlayHints?: unknown;
   draftsDir?: unknown;
+  pollIntervalMs?: unknown;
 }
 
 export function configFromSettings(raw: unknown): EffectiveConfig {
@@ -35,6 +39,7 @@ export function configFromSettings(raw: unknown): EffectiveConfig {
   if (typeof s.githubBaseUrl === "string") cfg.githubBaseUrl = s.githubBaseUrl.replace(/\/+$/, "");
   if (typeof s.inlayHints === "boolean") cfg.inlayHints = s.inlayHints;
   if (typeof s.draftsDir === "string" && s.draftsDir.length > 0) cfg.draftsDir = s.draftsDir;
+  if (typeof s.pollIntervalMs === "number" && s.pollIntervalMs > 0) cfg.pollIntervalMs = s.pollIntervalMs;
   return cfg;
 }
 
