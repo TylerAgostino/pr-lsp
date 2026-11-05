@@ -105,6 +105,22 @@ cargo build --target wasm32-wasip2 --release
 #    directory, then reload Zed.
 ```
 
+### Running the server without an npm publish
+
+The adapter installs `pr-review-lsp` from the npm registry at startup. For
+local testing before the package is published, install a packed build into
+the extension's work directory once — the adapter then keeps running that
+local install (registry lookups are only fatal when no server is present):
+
+```sh
+cd server && npm pack
+npm install --prefix "$LOCALAPPDATA/Zed/extensions/work/pr-review-lsp" \
+  ./pr-review-lsp-0.1.0.tgz   # macOS: ~/Library/Application\ Support/Zed/extensions/work/...
+```
+
+Re-run this after changing server code; rebuild the extension (reload Zed)
+after changing `src/lib.rs`.
+
 Repository layout:
 
 ```

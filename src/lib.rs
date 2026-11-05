@@ -28,26 +28,44 @@ impl PrReview {
     /// Ensures the npm-hosted LSP server package is installed and up to date,
     /// returning the path of the server script relative to the extension
     /// working directory.
+    ///
+    /// A locally installed server (e.g. `npm install` of a packed tarball for
+    /// dev testing an unpublished package) launches even when the registry
+    /// lookup fails; only a *missing* server makes the lookup fatal.
     fn server_script_path(&mut self, language_server_id: &zed::LanguageServerId) -> Result<String> {
         let server_exists = Self::server_exists();
         if self.did_find_server && server_exists {
             return Ok(SERVER_PATH.to_string());
         }
 
+        let installed = zed::npm_package_installed_version(SERVER_PACKAGE)?;
+
         zed::set_language_server_installation_status(
             language_server_id,
             &zed::LanguageServerInstallationStatus::CheckingForUpdate,
         );
-        let latest_version = zed::npm_package_latest_version(SERVER_PACKAGE)?;
+        let latest = match zed::npm_package_latest_version(SERVER_PACKAGE) {
+            Ok(latest) => Some(latest),
+            Err(_) if server_exists && installed.is_some() => {
+                // Unpublished/dev package: keep running the local install.
+                None
+            }
+            Err(e) => {
+                return Err(format!(
+                    "failed to look up '{SERVER_PACKAGE}' on npm: {e}\n\
+                     For local development without publishing, install a packed build into the \
+                     extension work directory (see README: Development)."
+                ));
+            }
+        };
 
-        if !server_exists
-            || zed::npm_package_installed_version(SERVER_PACKAGE)?.as_ref() != Some(&latest_version)
-        {
+        if !server_exists || (latest.is_some() && installed != latest) {
+            let version = latest.ok_or_else(|| format!("'{SERVER_PACKAGE}' is not installed"))?;
             zed::set_language_server_installation_status(
                 language_server_id,
                 &zed::LanguageServerInstallationStatus::Downloading,
             );
-            zed::npm_install_package(SERVER_PACKAGE, &latest_version)?;
+            zed::npm_install_package(SERVER_PACKAGE, &version)?;
             if !Self::server_exists() {
                 Err(format!(
                     "installed package '{SERVER_PACKAGE}' did not contain expected path \
