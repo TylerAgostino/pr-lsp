@@ -1,6 +1,7 @@
 use std::env;
 
 use zed_extension_api::settings::LspSettings;
+use zed_extension_api::process::Command as ZedProcessCommand;
 use zed_extension_api::{self as zed, serde_json, Result};
 
 const SERVER_PACKAGE: &str = "pr-review-lsp";
@@ -58,6 +59,25 @@ impl PrReview {
         self.did_find_server = true;
         Ok(SERVER_PATH.to_string())
     }
+
+    /// Fallback token source: `gh auth token`, used only when the shell
+    /// environment carries neither `GITHUB_TOKEN` nor `GH_TOKEN`.
+    fn gh_auth_token() -> Option<String> {
+        let output = ZedProcessCommand::new("gh")
+            .args(["auth", "token"])
+            .output()
+            .ok()?;
+        if output.status.unwrap_or(-1) != 0 {
+            return None;
+        }
+        let token = String::from_utf8(output.stdout).ok()?;
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            None
+        } else {
+            Some(token)
+        }
+    }
 }
 
 impl zed::Extension for PrReview {
@@ -74,11 +94,19 @@ impl zed::Extension for PrReview {
     ) -> Result<zed::Command> {
         let server_path = self.server_script_path(language_server_id)?;
 
-        let env = worktree
+        let mut env: Vec<(String, String)> = worktree
             .shell_env()
             .into_iter()
             .filter(|(key, _)| FORWARDED_ENV.contains(&key.as_str()))
             .collect();
+        let has_token = env.iter().any(|(key, value)| {
+            matches!(key.as_str(), "GITHUB_TOKEN" | "GH_TOKEN") && !value.trim().is_empty()
+        });
+        if !has_token {
+            if let Some(token) = Self::gh_auth_token() {
+                env.push(("GH_TOKEN".to_string(), token));
+            }
+        }
 
         Ok(zed::Command {
             command: zed::node_binary_path()?,
