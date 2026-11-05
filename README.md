@@ -42,7 +42,7 @@ Only GitHub is supported (github.com and GitHub Enterprise via
 The capabilities this extension uses are declared in `extension.toml`
 (`gh auth token` for the token fallback, `npm:install` for the language
 server package). Nothing to configure — see
-[Extension Capabilities](https://zed.dev/docs/extensions/extension-capabilities)
+[Extension Capabilities](https://zed.dev/docs/extensions/capabilities)
 for how Zed surfaces these to you.
 
 ## Settings
