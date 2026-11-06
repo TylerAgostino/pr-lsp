@@ -7,6 +7,7 @@ export const CMD_RESOLVE_THREAD = "pr-review.resolveThread";
 export const CMD_VIEW_ON_GITHUB = "pr-review.viewOnGithub";
 export const CMD_SUMMARY = "pr-review.summary";
 export const CMD_LIST_COMMENTS = "pr-review.listComments";
+export const CMD_POST_DRAFTS = "pr-review.postDrafts";
 export const CMD_DELETE_COMMENT = "pr-review.deleteComment";
 export const CMD_REMOVE_REACTION = "pr-review.removeReaction";
 
@@ -21,6 +22,7 @@ export const ALL_COMMANDS: string[] = [
   CMD_VIEW_ON_GITHUB,
   CMD_SUMMARY,
   CMD_LIST_COMMENTS,
+  CMD_POST_DRAFTS,
 ];
 
 // GitHub reaction content values (API-legal).

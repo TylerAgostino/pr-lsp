@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import { anchorToBuffer, type Anchor } from "./anchor";
 import { resolveToken } from "./auth";
-import { draftDir, draftSeedBody, isDraftPath, parseDraft, writeDraft } from "./drafts";
+import { draftDir, DRAFT_FILE_RE, draftSeedBody, isDraftPath, isUneditedDraft, parseDraft, writeDraft } from "./drafts";
 import { buildDiagnostics, renderCommentListing, type AnchoredThread } from "./diagnostics";
 import { resolveRepo, type RepoInfo } from "./git";
 import { GithubClient, type PullRequest, type ReviewComment, type ThreadState } from "./github";
@@ -25,6 +25,8 @@ export class AppState {
   private running = false;
   private followUp = false;
   private loginCache: Promise<string | null> | null = null;
+  private warnedDrafts = new Set<string>();
+  private posting = new Set<string>();
   constructor(readonly host: ServerHost) {}
 
   isDirty(doc: TextDocument): boolean {
@@ -258,6 +260,7 @@ export class AppState {
    */
   startBackgroundPoll(): void {
     if (this.pollTimer || !this.repo) return;
+    this.ensureDraftsLocation();
     const headFile = path.join(this.repo.root, ".git", "HEAD");
     const readHead = (): string | null => {
       try {
@@ -283,6 +286,7 @@ export class AppState {
     try {
       await this.refresh(true);
       await this.publishAll();
+      this.checkStuckDrafts();
     } catch (e) {
       this.log(`background refresh failed: ${String(e instanceof Error ? e.message : e)}`);
     } finally {
@@ -433,7 +437,7 @@ export class AppState {
     return file;
   }
 
-  /** Handles saving a draft file: posts to GitHub, deletes on success. */
+  /** Handles saving a draft file (LSP didSave): posts to GitHub, deletes on success. */
   async handleDraftSave(uri: string): Promise<boolean> {
     if (!this.repo) return false;
     let fsPath: string;
@@ -443,46 +447,168 @@ export class AppState {
       return false;
     }
     if (!isDraftPath(fsPath, draftDir(this.repo.root, this.host.config.draftsDir))) return false;
-    let text: string;
-    try {
-      text = fs.readFileSync(fsPath, "utf8");
-    } catch {
-      return true;
-    }
-    const parsed = parseDraft(text);
-    if (!parsed) {
-      this.error(`ignoring ${path.basename(fsPath)}: missing or invalid draft frontmatter`);
-      return true;
-    }
-    if (!this.pr || parsed.meta.pr !== this.pr.number) {
-      this.error(`draft targets PR #${parsed.meta.pr}, current PR is #${this.pr?.number ?? "none"}`);
-      return true;
-    }
-    if (parsed.meta.type !== "review" && parsed.body.length === 0) return true;
-    try {
-      const { owner, repo } = this.remote();
-      const client = this.requireClient();
-      if (parsed.meta.type === "reply") {
-        await client.replyToComment(owner, repo, parsed.meta.pr, parsed.meta.comment as number, parsed.body);
-      } else if (parsed.meta.type === "comment") {
-        await client.createReviewComment(
-          owner,
-          repo,
-          parsed.meta.pr,
-          parsed.body,
-          parsed.meta.path as string,
-          parsed.meta.line as number,
-        );
-      } else {
-        const event = (parsed.meta.event || "comment").toUpperCase();
-        await client.submitReview(owner, repo, parsed.meta.pr, event, parsed.body);
-      }
-      fs.unlinkSync(fsPath);
-      await this.refresh(true);
-      await this.publishAll();
-    } catch (e) {
-      this.error(`failed to post ${path.basename(fsPath)}: ${String(e instanceof Error ? e.message : e)}`);
-    }
+    await this.postDraftFile(fsPath);
     return true;
+  }
+
+  /**
+   * Explicit commit signal for drafts (command `pr-review.postDrafts`).
+   * Posts every edited draft on disk; untouched seed drafts are never
+   * posted, and nothing runs automatically — safe against autosave.
+   */
+  async postDrafts(): Promise<void> {
+    if (!this.repo) return;
+    const dir = draftDir(this.repo.root, this.host.config.draftsDir);
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      void this.host.connection.window.showInformationMessage("pr-review: no drafts to post");
+      return;
+    }
+    let posted = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const name of names) {
+      if (!DRAFT_FILE_RE.test(name)) continue;
+      const result = await this.postDraftFile(path.join(dir, name), true);
+      if (result === "posted") posted++;
+      else if (result === "failed") failed++;
+      else skipped++;
+    }
+    const msg =
+      posted || failed
+        ? `pr-review: posted ${posted} draft(s)${failed ? `, ${failed} failed (see notifications)` : ""}`
+        : skipped
+          ? "pr-review: only untouched draft templates found — edit one, then post or save it"
+          : "pr-review: no drafts to post";
+    void this.host.connection.window.showInformationMessage(msg);
+  }
+
+  private async postDraftFile(
+    fsPath: string,
+    skipUnedited = false,
+  ): Promise<"posted" | "skipped" | "failed"> {
+    if (this.posting.has(fsPath)) return "skipped";
+    this.posting.add(fsPath);
+    try {
+      let text: string;
+      try {
+        text = fs.readFileSync(fsPath, "utf8");
+      } catch {
+        return "skipped"; // vanished: another path already posted it
+      }
+      const parsed = parseDraft(text);
+      if (!parsed) {
+        this.error(`ignoring ${path.basename(fsPath)}: missing or invalid draft frontmatter`);
+        return "failed";
+      }
+      if (skipUnedited && isUneditedDraft(parsed.meta, parsed.body)) return "skipped";
+      if (!this.pr || parsed.meta.pr !== this.pr.number) {
+        this.error(`draft targets PR #${parsed.meta.pr}, current PR is #${this.pr?.number ?? "none"}`);
+        return "failed";
+      }
+      if (parsed.meta.type !== "review" && parsed.body.length === 0) return "skipped";
+      try {
+        const { owner, repo } = this.remote();
+        const client = this.requireClient();
+        if (parsed.meta.type === "reply") {
+          await client.replyToComment(owner, repo, parsed.meta.pr, parsed.meta.comment as number, parsed.body);
+        } else if (parsed.meta.type === "comment") {
+          await client.createReviewComment(
+            owner,
+            repo,
+            parsed.meta.pr,
+            parsed.body,
+            parsed.meta.path as string,
+            parsed.meta.line as number,
+          );
+        } else {
+          const event = (parsed.meta.event || "comment").toUpperCase();
+          await client.submitReview(owner, repo, parsed.meta.pr, event, parsed.body);
+        }
+        fs.unlinkSync(fsPath);
+        await this.refresh(true);
+        await this.publishAll();
+      } catch (e) {
+        this.error(`failed to post ${path.basename(fsPath)}: ${String(e instanceof Error ? e.message : e)}`);
+        return "failed";
+      }
+      return "posted";
+    } finally {
+      this.posting.delete(fsPath);
+    }
+  }
+
+  /**
+   * Drafts must sit where the editor routes save notifications to this
+   * server; files under .git/ are excluded from the worktree and never do.
+   * Move any drafts left in the old `.git/pr-review` default and keep the
+   * drafts directory out of `git status` via `.git/info/exclude`.
+   */
+  private ensureDraftsLocation(): void {
+    if (!this.repo) return;
+    const dir = draftDir(this.repo.root, this.host.config.draftsDir);
+    const legacy = path.join(this.repo.root, ".git", "pr-review");
+    if (path.normalize(dir) !== path.normalize(legacy)) {
+      try {
+        for (const name of fs.readdirSync(legacy)) {
+          const to = path.join(dir, name);
+          if (!fs.existsSync(to)) fs.renameSync(path.join(legacy, name), to);
+        }
+      } catch {
+        /* no legacy drafts */
+      }
+    }
+    this.updateExclude(dir);
+  }
+
+  private updateExclude(draftsAbs: string): void {
+    if (!this.repo) return;
+    const rel = path.relative(this.repo.root, draftsAbs);
+    if (path.isAbsolute(rel) || rel.startsWith("..")) return; // outside the worktree
+    const pattern = `${rel.split(path.sep).join("/")}/`;
+    const excludeFile = path.join(this.repo.root, ".git", "info", "exclude");
+    let current = "";
+    try {
+      current = fs.readFileSync(excludeFile, "utf8");
+    } catch {
+      /* created below */
+    }
+    if (current.split(/\r?\n/).some((l) => l.trim() === pattern || l.trim() === rel)) return;
+    try {
+      fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+      fs.appendFileSync(excludeFile, `${current === "" || current.endsWith("\n") ? "" : "\n"}${pattern}\n`);
+    } catch {
+      /* exclusion is best-effort; posting still works */
+    }
+  }
+
+  /** Diagnostics only — never posts: nudge about edited-but-unposted drafts. */
+  private checkStuckDrafts(): void {
+    if (!this.repo) return;
+    const dir = draftDir(this.repo.root, this.host.config.draftsDir);
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (!DRAFT_FILE_RE.test(name)) continue;
+      const f = path.join(dir, name);
+      if (this.posting.has(f) || this.warnedDrafts.has(f)) continue;
+      try {
+        if (Date.now() - fs.statSync(f).mtimeMs < 45_000) continue;
+        const parsed = parseDraft(fs.readFileSync(f, "utf8"));
+        if (!parsed || isUneditedDraft(parsed.meta, parsed.body)) continue;
+      } catch {
+        continue;
+      }
+      this.warnedDrafts.add(f);
+      void this.host.connection.window.showInformationMessage(
+        `pr-review: unposted draft "${name}" — save it in the editor, or run pr-review.postDrafts`,
+      );
+    }
   }
 }

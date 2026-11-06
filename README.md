@@ -21,7 +21,7 @@ TypeScript and updates land without extension republishing:
 | Comment highlighting  | `textDocument/publishDiagnostics` (information)      |
 | Comment tooltips      | `textDocument/hover` (author, time, reactions, body) |
 | Reply / react / resolve | Code actions (`Ctrl-.` on a commented line)        |
-| New comment / reply / review submission | Draft files under `.git/pr-review/` — edit, save, auto-posted |
+| New comment / reply / review submission | Draft files under `.pr-review/` — edit, then save **or** run `pr-review.postDrafts` |
 | Command palette actions | `workspace/executeCommand`                       |
 | "PR: N comments" badges | Inlay hints (toggle via `inlayHints`)              |
 
@@ -56,7 +56,7 @@ for how Zed surfaces these to you.
     "settings": {
       "githubBaseUrl": "",        // GHE root, e.g. "https://ghe.example.com"
       "inlayHints": true,         // "◈ PR: N comments" badges
-      "draftsDir": ".git/pr-review", // where draft files live
+      "draftsDir": ".pr-review", // where draft files live (auto-added to .git/info/exclude)
       "pollIntervalMs": 30000     // background refresh interval
     }
   }
@@ -82,6 +82,7 @@ arguments (comment id) and are therefore only offered as code actions:
 | `pr-review.resolveThread`        | Resolve / unresolve the thread                |
 | `pr-review.viewOnGithub`         | Open the comment's permalink in the browser   |
 | `pr-review.listComments`         | Write & open an all-comments listing across every file |
+| `pr-review.postDrafts`           | Post every edited draft on disk (explicit signal; see "Draft files") |
 | `pr-review.deleteComment`        | Delete your review comment or reply (code action "Delete comment (you)") |
 | `pr-review.removeReaction`       | Remove your own reaction (code action "Remove 👍 (you)" etc.) |
 
@@ -93,6 +94,7 @@ Zed ≥ 1.21 ships a dedicated picker: run
 with the cursor in a file this server handles — it opens
 "Select a language server command…" listing `pr-review.refresh`,
 `pr-review.summary`, `pr-review.draftReview`, `pr-review.listComments`,
+`pr-review.postDrafts`,
 and friends; selecting one executes it immediately. The picker only
 appears when the active buffer actually has servers advertising commands.
 Optional key binding (`keymap.json`):
@@ -110,14 +112,26 @@ menu on a comment line covers react/reply/resolve/view, and selection →
 Writing is deliberately file-based so you can compose in the editor:
 
 1. Trigger a draft (code action or palette command).
-2. A Markdown file appears under `.git/pr-review/` with frontmatter
-   (`type`, `pr`, and for inline comments `path` + `line`, or `event` for
-   reviews) and a seed body.
-3. Edit it and **save** — the server posts it to GitHub, deletes the file,
-   and refreshes annotations.
+2. A Markdown file appears under **`.pr-review/`** at the project root,
+   with frontmatter (`type`, `pr`, and for inline comments `path` +
+   `line`, or `event` for reviews) and a seed body. The folder is added
+   to `.git/info/exclude` automatically, so it never appears in
+   `git status` and is never committed.
+3. Edit it, then post it with either explicit signal:
+   - **Save the file** in the editor, or
+   - run **`pr-review.postDrafts`** (palette), which posts every edited
+     draft on disk — useful when your editor doesn't route buffer saves
+     to the language server, or you edited drafts outside it.
 
-Inline drafts post as single review comments on save; the review draft
-submits the PR-level review with the event from its frontmatter.
+The server posts, deletes the file, and refreshes annotations. Nothing is
+ever posted automatically — untouched seed templates are ignored by both
+paths, so autosave can't post a half-written comment.
+
+If posting fails you'll get an error notification (`pr-review: failed to
+post …`) — common causes: a fine-grained PAT without **Pull requests:
+Write** permission (reads still work!), or a classic token missing the
+`repo` scope. If a draft sits on disk for 45+ seconds after you edited
+it, the server also nudges you about it.
 
 ### See every comment across all files
 
@@ -132,7 +146,7 @@ Two complementary mechanisms:
 - **`pr-review.listComments`** (palette): writes a Markdown digest of every
   review thread grouped by file — path, `Lnn`, author, first line, reply
   count, resolved/outdated markers, and a GitHub permalink per thread —
-  into `.git/pr-review/` and opens it. Saving it posts nothing; delete the
+  into `.pr-review/` and opens it. Saving it posts nothing; delete the
   file when done.
 
 ## Using with editors other than Zed (Kiro, VS Code, …)
@@ -235,8 +249,9 @@ Feature notes for all non-Zed clients: diagnostics/hover/code actions work
 wherever the client renders them; palette commands
 (`pr-review.refresh`, `pr-review.draftReview`, `pr-review.summary`) need
 the client to expose `workspace/executeCommand`; drafts are always written
-to `.git/pr-review/` even when a client ignores `window/showDocument` —
-open and save them manually and they post the same way.
+to `.pr-review/` even when a client ignores `window/showDocument` —
+open and save them manually, or run `pr-review.postDrafts`, and they
+post the same way.
 
 ## Development
 

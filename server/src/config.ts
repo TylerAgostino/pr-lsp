@@ -13,7 +13,9 @@ export interface EffectiveConfig {
   githubBaseUrl: string;
   /** Render end-of-line inlay hint badges on commented lines. */
   inlayHints: boolean;
-  /** Directory (workspace-relative) holding draft files. */
+  /** Directory (workspace-relative) holding draft files. Files under .git/
+   *  never reach the language server as saved buffers, so drafts must live
+   *  in a worktree-visible directory. */
   draftsDir: string;
   /** Milliseconds between background .git/HEAD checks (branch switch refresh). */
   pollIntervalMs: number;
@@ -22,7 +24,7 @@ export interface EffectiveConfig {
 export const DEFAULT_CONFIG: EffectiveConfig = {
   githubBaseUrl: "",
   inlayHints: true,
-  draftsDir: ".git/pr-review",
+  draftsDir: ".pr-review",
   pollIntervalMs: 30_000,
 };
 

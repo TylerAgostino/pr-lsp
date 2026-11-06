@@ -45,6 +45,14 @@ export function isDraftPath(absPath: string, dir: string): boolean {
   return !rel.startsWith("..") && !path.isAbsolute(rel) && rel.length > 0;
 }
 
+/** Filename shape produced by writeDraft; listing-* listings excluded. */
+export const DRAFT_FILE_RE = /^(comment|reply|review)(-\d+)*\.md$/;
+
+/** True while the body is still the untouched seed text for this draft. */
+export function isUneditedDraft(meta: DraftMeta, body: string): boolean {
+  return body === draftSeedBody(meta.type, { path: meta.path, line: meta.line }).trim();
+}
+
 /** Parse `---\nkey: value\n---\nbody`. Null when frontmatter is absent/bad. */
 export function parseDraft(text: string): { meta: DraftMeta; body: string } | null {
   const m = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?([\s\S]*)$/.exec(text);

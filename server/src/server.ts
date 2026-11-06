@@ -14,6 +14,7 @@ import {
   CMD_DELETE_COMMENT,
   CMD_DRAFT_REVIEW,
   CMD_LIST_COMMENTS,
+  CMD_POST_DRAFTS,
   CMD_REACT,
   CMD_REFRESH,
   CMD_REMOVE_REACTION,
@@ -52,7 +53,7 @@ export function createHost(): ServerHost {
   return {
     connection,
     documents,
-    config: { githubBaseUrl: "", inlayHints: true, draftsDir: ".git/pr-review", pollIntervalMs: 30_000 },
+    config: { githubBaseUrl: "", inlayHints: true, draftsDir: ".pr-review", pollIntervalMs: 30_000 },
     workspaceRoot: null,
   };
 }
@@ -243,6 +244,9 @@ export function wireLifecycle(host: ServerHost): void {
             break;
           }
           await state.listComments();
+          break;
+        case CMD_POST_DRAFTS:
+          await state.postDrafts();
           break;
         default:
           break;

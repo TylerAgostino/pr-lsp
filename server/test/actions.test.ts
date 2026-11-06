@@ -6,6 +6,7 @@ import {
   CMD_CREATE_COMMENT_DRAFT,
   CMD_DELETE_COMMENT,
   CMD_DRAFT_REVIEW,
+  CMD_POST_DRAFTS,
   CMD_REACT,
   CMD_REMOVE_REACTION,
   CMD_RESOLVE_THREAD,
@@ -20,7 +21,7 @@ let dir: string;
 let headSha: string;
 let filePath: string;
 let uri: string;
-const draftsDir = (): string => path.join(dir, ".git", "pr-review");
+const draftsDir = (): string => path.join(dir, ".pr-review");
 
 function seedComment(over: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -261,5 +262,27 @@ describe("code actions and drafts", () => {
       fake.requests.filter((r) => r.method === "DELETE" && /pulls\/comments\/14$/.test(r.path)).length,
     ).toBe(1);
     expect(fake.state.comments.some((c) => c.id === 14)).toBe(false);
+  });
+
+  it("postDrafts posts edited on-disk drafts without any save notification", async () => {
+    await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 5]);
+    const commentDraft = onlyDraft("comment-");
+    rewriteBody(commentDraft, "posted via command");
+    await client.execCommand(CMD_DRAFT_REVIEW, []);
+    const reviewDraft = onlyDraft("review-");
+    rewriteBody(reviewDraft, "ship via command");
+    await client.execCommand(CMD_POST_DRAFTS, []);
+    expect(fake.state.comments.some((c) => c.body === "posted via command")).toBe(true);
+    expect(
+      fake.state.reviews.some((r) => String(r.body ?? "").includes("ship via command")),
+    ).toBe(true);
+    expect(fs.existsSync(commentDraft)).toBe(false);
+    expect(fs.existsSync(reviewDraft)).toBe(false);
+    // untouched seed drafts are never posted
+    await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 7]);
+    const seed = onlyDraft("comment-");
+    await client.execCommand(CMD_POST_DRAFTS, []);
+    expect(fs.existsSync(seed)).toBe(true);
+    fs.unlinkSync(seed);
   });
 });
