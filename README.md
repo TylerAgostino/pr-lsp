@@ -6,6 +6,9 @@ comments appear as wavy-underline highlights in the affected files, with
 rich tooltips, quick-fix menus (react / resolve / reply / open on GitHub),
 and file-based draft flows for writing new comments and submitting reviews.
 
+The editor UX is driven by a standalone LSP server, so it can also be run
+outside Zed — see [Using with editors other than Zed](#using-with-editors-other-than-zed-kiro-vs-code-) below.
+
 ## How it works
 
 The extension is a thin WASM adapter that launches a companion language
@@ -91,6 +94,105 @@ Writing is deliberately file-based so you can compose in the editor:
 
 Inline drafts post as single review comments on save; the review draft
 submits the PR-level review with the event from its frontmatter.
+
+## Using with editors other than Zed (Kiro, VS Code, …)
+
+Everything this extension shows in Zed is produced by `pr-review-lsp`, a
+standard stdio LSP server with no Zed dependency. Any editor that can run
+an external language server can use it directly:
+
+```sh
+cd server && npm install && npm run build
+node "$PWD/dist/server.js" --stdio   # the LSP launch command
+```
+
+Two caveats that apply to every non-Zed client:
+
+- **Auth**: set `GITHUB_TOKEN` (or `GH_TOKEN`) in the environment that
+  launches the server. The `gh auth token` fallback lives in the Zed
+  adapter, so non-Zed clients need the env var.
+- **Settings** (same keys as the Zed `settings` block above) are passed as
+  LSP `initializationOptions` in the shape `{ "settings": { ... } }`.
+
+### Kiro CLI — supported today (custom LSP config)
+
+Kiro CLI supports workspace-scoped custom language servers
+([code intelligence docs](https://kiro.dev/docs/tools/code-intelligence/)).
+From the project root:
+
+```text
+/code init
+```
+
+then add an entry (path created by your build: project-root `lsp.json` or
+`.kiro/settings/lsp.json`) merging into its `languages` map — one entry per
+language you want reviewed, since Kiro matches servers by language:
+
+```json
+{
+  "languages": {
+    "rust": {
+      "name": "pr-review-lsp",
+      "command": "node",
+      "args": ["C:/absolute/path/pr-lsp/server/dist/server.js", "--stdio"],
+      "file_extensions": ["rs"],
+      "project_patterns": [".git"],
+      "initialization_options": { "settings": { "inlayHints": true } }
+    }
+  }
+}
+```
+
+Copy that entry for each language (change `file_extensions`), then
+`/code init -f` and check with `/code status` / `/code logs`. PR review
+diagnostics/hover flow through Kiro's LSP-backed code intelligence. Kiro
+CLI's custom-LSP coverage varies per language — if diagnostics arrive but
+hover or code actions don't, that's a Kiro limitation, not a server bug.
+
+### Kiro IDE / VS Code — needs a client extension (not shipped yet)
+
+Kiro IDE (Code OSS-based, extensions from Open VSX) and VS Code have **no
+built-in way to register an arbitrary external LSP server** — they only
+run LSP servers that a client extension registers. No `pr-review-lsp`
+client extension exists yet, so there is currently no supported setup in
+Kiro IDE/VS Code. A wrapper is a small, well-understood extension
+(`vscode-languageclient` around the same `dist/server.js`); if you want
+one, open an issue on this repo.
+
+### Neovim / Helix / Sublime / Emacs — standard LSP clients
+
+Neovim (0.10+):
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "rust", "python", "go", "typescript", "javascript" },
+  callback = function()
+    vim.lsp.start({
+      cmd = { "node", "/absolute/path/pr-lsp/server/dist/server.js", "--stdio" },
+    })
+  end,
+})
+```
+
+Helix (`~/.config/helix/languages.toml`, attach `pr-review-lsp` to your
+language scopes):
+
+```toml
+[language-server.pr-review-lsp]
+command = "node"
+args = ["/absolute/path/pr-lsp/server/dist/server.js", "--stdio"]
+```
+
+Sublime Text (LSP package, via `LSP.sublime-settings`) and Emacs
+(`lsp-mode`) take the same `node …/dist/server.js --stdio` command in
+their client configs.
+
+Feature notes for all non-Zed clients: diagnostics/hover/code actions work
+wherever the client renders them; palette commands
+(`pr-review.refresh`, `pr-review.draftReview`, `pr-review.summary`) need
+the client to expose `workspace/executeCommand`; drafts are always written
+to `.git/pr-review/` even when a client ignores `window/showDocument` —
+open and save them manually and they post the same way.
 
 ## Development
 
