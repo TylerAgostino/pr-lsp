@@ -80,6 +80,7 @@ or, where available, from code actions on a commented line:
 | `pr-review.react`                | Add a reaction to the comment under the cursor |
 | `pr-review.resolveThread`        | Resolve / unresolve the thread                |
 | `pr-review.viewOnGithub`         | Open the comment's permalink in the browser   |
+| `pr-review.listComments`         | Write & open an all-comments listing across every file |
 
 ## Draft files
 
@@ -94,6 +95,22 @@ Writing is deliberately file-based so you can compose in the editor:
 
 Inline drafts post as single review comments on save; the review draft
 submits the PR-level review with the event from its frontmatter.
+
+### See every comment across all files
+
+Two complementary mechanisms:
+
+- **Project diagnostics**: the server publishes annotations for files even
+  when no editor has them open, so Zed's project-diagnostics surfaces
+  aggregate PR comments across the whole PR, not just visible buffers.
+  Whether closed-file, information-severity entries appear in a given
+  client's panel is up to the client — in Zed check
+  `editor: project diagnostics`. The listing below never depends on it.
+- **`pr-review.listComments`** (palette): writes a Markdown digest of every
+  review thread grouped by file — path, `Lnn`, author, first line, reply
+  count, resolved/outdated markers, and a GitHub permalink per thread —
+  into `.git/pr-review/` and opens it. Saving it posts nothing; delete the
+  file when done.
 
 ## Using with editors other than Zed (Kiro, VS Code, …)
 

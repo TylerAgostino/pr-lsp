@@ -1,3 +1,4 @@
+import { removeTree } from "./fixtures/rmtree";
 import * as fs from "node:fs";
 import { CMD_REFRESH } from "../src/commands";
 import { TestClient } from "./client";
@@ -51,7 +52,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await client.shutdown();
   await fake.close();
-  fs.rmSync(repo.dir, { recursive: true, force: true });
+  removeTree(repo.dir);
   delete process.env.GITHUB_TOKEN;
 });
 

@@ -12,6 +12,7 @@ import {
   ALL_COMMANDS,
   CMD_CREATE_COMMENT_DRAFT,
   CMD_DRAFT_REVIEW,
+  CMD_LIST_COMMENTS,
   CMD_REACT,
   CMD_REFRESH,
   CMD_RESOLVE_THREAD,
@@ -208,6 +209,14 @@ export function wireLifecycle(host: ServerHost): void {
           );
           break;
         }
+        case CMD_LIST_COMMENTS:
+          await state.refresh(true);
+          if (!state.pr) {
+            void connection.window.showInformationMessage("pr-review: no open PR for this branch");
+            break;
+          }
+          await state.listComments();
+          break;
         default:
           break;
       }

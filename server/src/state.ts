@@ -5,7 +5,7 @@ import type { TextDocument } from "vscode-languageserver-textdocument";
 import { anchorToBuffer, type Anchor } from "./anchor";
 import { resolveToken } from "./auth";
 import { draftDir, draftSeedBody, isDraftPath, parseDraft, writeDraft } from "./drafts";
-import { buildDiagnostics, type AnchoredThread } from "./diagnostics";
+import { buildDiagnostics, renderCommentListing, type AnchoredThread } from "./diagnostics";
 import { resolveRepo, type RepoInfo } from "./git";
 import { GithubClient, type PullRequest, type ReviewComment, type ThreadState } from "./github";
 import { attachThreadState, groupThreads, type Thread } from "./model";
@@ -137,14 +137,19 @@ export class AppState {
     return rel;
   }
 
-  /** Threads anchored to `doc`; stale threads carry state "stale". */
-  threadsForDoc(doc: TextDocument): Thread[] {
-    const rel = this.relativePath(doc.uri);
-    if (!rel || !this.pr || !this.repo) return [];
+  /** All comment threads whose GitHub path is `rel`, with thread state. */
+  threadsForRel(rel: string): Thread[] {
+    if (!this.pr || !this.repo) return [];
     const inFile = this.comments.filter((c) => c.path === rel);
     const threads = groupThreads(inFile);
     attachThreadState(threads, this.threadStates);
     return threads;
+  }
+
+  /** Threads anchored to `doc`; stale threads carry state "stale". */
+  threadsForDoc(doc: TextDocument): Thread[] {
+    const rel = this.relativePath(doc.uri);
+    return rel ? this.threadsForRel(rel) : [];
   }
 
   anchorThread(doc: TextDocument, thread: Thread): Anchor {
@@ -158,6 +163,40 @@ export class AppState {
     for (const t of this.threadsForDoc(doc)) {
       const anchor = this.anchorThread(doc, t);
       if (anchor.state === "line") out.push({ ...t, anchor });
+    }
+    return out;
+  }
+
+  /** Open documents anchor against editor text; closed files against disk
+   *  (modification state unknown → hunk anchoring only, never line-direct). */
+  allAnchoredThreads(): { rel: string; lineLengths: number[]; anchored: AnchoredThread[]; stale: Thread[] }[] {
+    if (!this.pr || !this.repo) return [];
+    const rels = [...new Set(this.comments.map((c) => c.path))].sort();
+    const out: { rel: string; lineLengths: number[]; anchored: AnchoredThread[]; stale: Thread[] }[] = [];
+    for (const rel of rels) {
+      const open = this.host.documents.all().find((d) => this.relativePath(d.uri) === rel);
+      let lines: string[];
+      let dirty: boolean;
+      if (open) {
+        lines = open.getText().split(/\r?\n/);
+        dirty = this.isDirty(open);
+      } else {
+        try {
+          lines = fs.readFileSync(path.join(this.repo.root, rel), "utf8").split(/\r?\n/);
+        } catch {
+          out.push({ rel, lineLengths: [], anchored: [], stale: this.threadsForRel(rel) });
+          continue;
+        }
+        dirty = true;
+      }
+      const anchored: AnchoredThread[] = [];
+      const stale: Thread[] = [];
+      for (const t of this.threadsForRel(rel)) {
+        const a = anchorToBuffer(lines, t.top, this.repo.headSha, dirty);
+        if (a.state === "line") anchored.push({ ...t, anchor: a });
+        else stale.push(t);
+      }
+      out.push({ rel, lineLengths: lines.map((l) => l.length), anchored, stale });
     }
     return out;
   }
@@ -181,8 +220,31 @@ export class AppState {
     this.host.connection.sendDiagnostics({ uri, diagnostics: diags });
   }
 
+  /** URIs published while no editor had them open; tracked to clear. */
+  private closedPublished = new Set<string>();
+
+  /** Publish open buffers plus diagnostics for closed files with anchored
+   *  threads, so project-wide diagnostic surfaces aggregate all files. */
   async publishAll(): Promise<void> {
     for (const doc of this.host.documents.all()) await this.publishForDoc(doc.uri);
+    const active = new Set<string>();
+    if (this.repo) {
+      for (const g of this.allAnchoredThreads()) {
+        if (this.host.documents.all().some((d) => this.relativePath(d.uri) === g.rel)) continue;
+        if (g.anchored.length === 0) continue;
+        const uri = pathToFileURL(path.join(this.repo.root, g.rel)).href;
+        this.host.connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(g.lineLengths, g.anchored) });
+        active.add(uri);
+      }
+    }
+    const openUris = new Set(this.host.documents.all().map((d) => d.uri));
+    for (const uri of this.closedPublished) {
+      // An open buffer owns its own publish (just sent above or on didOpen);
+      // clearing it here would wipe fresh annotations under a race-free name.
+      if (openUris.has(uri)) continue;
+      if (!active.has(uri)) this.host.connection.sendDiagnostics({ uri, diagnostics: [] });
+    }
+    this.closedPublished = active;
   }
 
   private pollTimer: NodeJS.Timeout | null = null;
@@ -304,6 +366,18 @@ export class AppState {
       draftSeedBody("review", {}),
     );
     this.openDraftInEditor(file);
+    return file;
+  }
+
+  /** Write an all-threads, cross-file listing and open it in the editor. */
+  async listComments(): Promise<string | null> {
+    if (!this.pr || !this.repo) return null;
+    const dir = draftDir(this.repo.root, this.host.config.draftsDir);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `listing-${this.pr.number}-${Date.now()}.md`);
+    fs.writeFileSync(file, renderCommentListing(this.pr, this.allAnchoredThreads()));
+    this.openDraftInEditor(file);
+    this.log(`comment listing written: ${file}`);
     return file;
   }
 

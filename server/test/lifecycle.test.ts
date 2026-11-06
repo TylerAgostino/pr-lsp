@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { removeTree } from "./fixtures/rmtree";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,7 +18,7 @@ describe("server lifecycle", () => {
       }
       client = null;
     }
-    if (dir) rmSync(dir, { recursive: true, force: true });
+    if (dir) removeTree(dir);
   });
 
   it("boots, and publishes empty diagnostics for a non-git workspace", async () => {

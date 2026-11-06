@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { removeTree } from "./fixtures/rmtree";
 import * as os from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveToken } from "../src/auth";
@@ -79,7 +80,7 @@ describe("git + github integration", () => {
       fake = null;
     }
     if (repo) {
-      rmSync(repo.dir, { recursive: true, force: true });
+      removeTree(repo.dir);
       repo = null;
     }
   });
@@ -145,7 +146,7 @@ describe("git + github integration", () => {
     try {
       expect(await resolveRepo(other)).toBeNull();
     } finally {
-      rmSync(other, { recursive: true, force: true });
+      removeTree(other);
     }
   });
 });

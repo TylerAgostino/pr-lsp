@@ -1,3 +1,4 @@
+import { removeTree } from "./fixtures/rmtree";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -55,7 +56,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await client.shutdown();
   await fake.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  removeTree(dir);
   delete process.env.GITHUB_TOKEN;
 });
 

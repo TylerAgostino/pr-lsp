@@ -17,7 +17,7 @@
     "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.js",
     "prepack": "npm run build",
     "pretest": "npm run build",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

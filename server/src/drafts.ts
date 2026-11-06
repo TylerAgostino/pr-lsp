@@ -39,6 +39,8 @@ export function writeDraft(dir: string, meta: DraftMeta, seedBody: string): stri
 }
 
 export function isDraftPath(absPath: string, dir: string): boolean {
+  const base = path.basename(absPath);
+  if (base.startsWith("listing-")) return false; // read-only listings live alongside drafts
   const rel = path.relative(dir, absPath);
   return !rel.startsWith("..") && !path.isAbsolute(rel) && rel.length > 0;
 }

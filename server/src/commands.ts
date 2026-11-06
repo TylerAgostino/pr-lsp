@@ -6,6 +6,7 @@ export const CMD_REACT = "pr-review.react";
 export const CMD_RESOLVE_THREAD = "pr-review.resolveThread";
 export const CMD_VIEW_ON_GITHUB = "pr-review.viewOnGithub";
 export const CMD_SUMMARY = "pr-review.summary";
+export const CMD_LIST_COMMENTS = "pr-review.listComments";
 
 export const ALL_COMMANDS: string[] = [
   CMD_REFRESH,
@@ -15,6 +16,7 @@ export const ALL_COMMANDS: string[] = [
   CMD_RESOLVE_THREAD,
   CMD_VIEW_ON_GITHUB,
   CMD_SUMMARY,
+  CMD_LIST_COMMENTS,
 ];
 
 // GitHub reaction content values (API-legal).

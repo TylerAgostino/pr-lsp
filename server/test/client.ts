@@ -35,6 +35,7 @@ export class TestClient {
   readonly proc: ChildProcessWithoutNullStreams;
   readonly conn: MessageConnection;
   readonly notifications: Notif[] = [];
+  readonly serverRequests: Notif[] = [];
   readonly stderr: string[] = [];
   private waiters: {
     method: string;
@@ -64,8 +65,11 @@ export class TestClient {
         }
       }
     });
-    // Answer server-initiated requests harmlessly.
-    this.conn.onRequest(() => null as unknown);
+    // Answer server-initiated requests harmlessly, but record them.
+    this.conn.onRequest((method, params) => {
+      this.serverRequests.push({ method: String(method), params });
+      return null as unknown;
+    });
     this.conn.listen();
   }
 

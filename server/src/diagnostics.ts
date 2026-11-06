@@ -40,3 +40,37 @@ export function buildDiagnostics(
   }
   return out;
 }
+
+/**
+ * Full cross-file listing of every PR review thread, one section per file.
+ * Written to a `listing-*.md` file by `pr-review.listComments`; saving it
+ * posts nothing (the draft router exempts `listing-` names).
+ */
+export function renderCommentListing(
+  pr: { number: number; title: string; html_url: string },
+  files: { rel: string; anchored: AnchoredThread[]; stale: Thread[] }[],
+): string {
+  const firstLine = (s: string) => s.split("\n")[0].trim();
+  const line = (t: Thread, where: string) => {
+    const replies = t.replies.length;
+    const bits = [
+      where.startsWith("_")
+        ? `- _outdated_ @${t.top.user?.login ?? "unknown"}: ${firstLine(t.top.body)}${replies > 0 ? ` (replies: ${replies})` : ""}`
+        : `- **${where}** @${t.top.user?.login ?? "unknown"}: ${firstLine(t.top.body)}${replies > 0 ? ` (replies: ${replies})` : ""}`,
+      t.isResolved === true ? "*(resolved)*" : null,
+      `[view](${t.top.html_url})`,
+    ].filter(Boolean);
+    return bits.join(" — ");
+  };
+  const out: string[] = [`# PR #${pr.number} — ${pr.title}`, pr.html_url, ""];
+  for (const f of files) {
+    const total = f.anchored.length + f.stale.length;
+    if (total === 0) continue;
+    out.push(`## ${f.rel} (${total})`, "");
+    for (const t of f.anchored) out.push(line(t, `L${t.anchor.line + 1}`));
+    for (const t of f.stale) out.push(line(t, "_outdated_"));
+    out.push("");
+  }
+  out.push("_Saving this file does not post anything. Delete it when done._", "");
+  return out.join("\n");
+}
