@@ -454,10 +454,14 @@ export class AppState {
 
 
   /** Code action "Publish this draft to GitHub" run from inside a draft buffer. */
-  async postDraft(fsPath: string): Promise<void> {
-    if (!this.repo) return;
-    if (!isDraftPath(fsPath, draftDir(this.repo.root, this.host.config.draftsDir))) {
-      this.error(`not a draft file: ${fsPath}`);
+  async postDraft(fsPath?: unknown): Promise<void> {
+    if (
+      !this.repo ||
+      typeof fsPath !== "string" ||
+      fsPath === "" ||
+      !isDraftPath(fsPath, draftDir(this.repo.root, this.host.config.draftsDir))
+    ) {
+      this.error('run "Publish this draft to GitHub" from inside the draft file, or run pr-review.postDrafts');
       return;
     }
     await this.postDraftFile(fsPath, true);

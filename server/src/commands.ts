@@ -24,7 +24,6 @@ export const ALL_COMMANDS: string[] = [
   CMD_SUMMARY,
   CMD_LIST_COMMENTS,
   CMD_POST_DRAFTS,
-  CMD_POST_DRAFT,
 ];
 
 // GitHub reaction content values (API-legal).

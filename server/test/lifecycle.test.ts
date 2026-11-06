@@ -36,4 +36,19 @@ describe("server lifecycle", () => {
     expect(diags).toEqual([]);
     expect(client.proc.exitCode, client.stderr.join("")).toBeNull();
   });
+
+  it("logs a warning when draftsDir points inside .git/", async () => {
+    dir = mkdtempSync(path.join(os.tmpdir(), "prl-draftsdir-"));
+    client = new TestClient(dir);
+    const warned = client.waitForNotification(
+      "window/logMessage",
+      (p) =>
+        typeof p === "object" && p !== null && "message" in p && String(p.message).includes("inside .git/"),
+    );
+    await client.initialize({ draftsDir: ".git/pr-review" });
+    const params = await warned;
+    expect(params && typeof params === "object" && "message" in params ? String(params.message) : "").toContain(
+      'using ".pr-review" instead',
+    );
+  });
 });

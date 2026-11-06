@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { CodeActionKind, type CodeAction } from "vscode-languageserver";
+import { CodeActionKind, MessageType, type CodeAction } from "vscode-languageserver";
 import {
   createConnection,
   TextDocuments,
@@ -62,6 +62,18 @@ export function createHost(): ServerHost {
   };
 }
 
+/** Apply raw settings; warn (to editor logs) when a `.git/` draftsDir is corrected. */
+function applySettings(host: ServerHost, raw: unknown): void {
+  host.config = configFromSettings(raw);
+  const claimed = typeof raw === "object" && raw !== null && "draftsDir" in raw ? raw.draftsDir : undefined;
+  if (typeof claimed === "string" && claimed !== host.config.draftsDir) {
+    void host.connection.sendNotification("window/logMessage", {
+      type: MessageType.Warning,
+      message: `pr-review: draftsDir "${claimed}" is inside .git/, where editor saves never reach a language server — using "${host.config.draftsDir}" instead`,
+    });
+  }
+}
+
 export function wireLifecycle(host: ServerHost): void {
   const { connection } = host;
   const state = new AppState(host);
@@ -71,7 +83,7 @@ export function wireLifecycle(host: ServerHost): void {
       params.workspaceFolders && params.workspaceFolders.length > 0
         ? params.workspaceFolders[0].uri
         : (params.rootUri ?? null);
-    host.config = configFromSettings(params.initializationOptions?.settings);
+    applySettings(host, params.initializationOptions?.settings);
 
     return {
       capabilities: {
@@ -101,7 +113,7 @@ export function wireLifecycle(host: ServerHost): void {
   });
 
   connection.onDidChangeConfiguration(({ settings }) => {
-    host.config = configFromSettings(settings);
+    applySettings(host, settings);
   });
 
   host.documents.onDidOpen((e) => {
@@ -263,7 +275,7 @@ export function wireLifecycle(host: ServerHost): void {
           await state.postDrafts();
           break;
         case CMD_POST_DRAFT:
-          await state.postDraft(String(args[0]));
+          await state.postDraft(args[0]);
           break;
         default:
           break;

@@ -7,6 +7,7 @@ import {
   CMD_DELETE_COMMENT,
   CMD_DRAFT_REVIEW,
   CMD_POST_DRAFTS,
+  CMD_POST_DRAFT,
   CMD_REFRESH,
   CMD_REACT,
   CMD_REMOVE_REACTION,
@@ -315,5 +316,17 @@ describe("code actions and drafts", () => {
     await client.execCommand(pub!.command!.command, pub!.command!.arguments);
     await waitUntil(() => fake.state.comments.some((c) => c.body === "published via action"));
     expect(fs.existsSync(draft)).toBe(false);
+  });
+
+  it("postDraft without a path argument shows guidance, not a bogus error", async () => {
+    const before = fake.state.comments.length;
+    await client.execCommand(CMD_POST_DRAFT);
+    // Server toasts are window/showMessageRequest requests; the exec reply
+    // only lands after the handler fired the toast, so no waiting needed.
+    const msgs = client.serverRequests
+      .filter((r) => r.method === "window/showMessageRequest")
+      .map((r) => (r.params && typeof r.params === "object" && "message" in r.params ? String(r.params.message) : ""));
+    expect(msgs.some((m) => m.includes("from inside the draft file"))).toBe(true);
+    expect(fake.state.comments.length).toBe(before);
   });
 });
