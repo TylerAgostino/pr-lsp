@@ -68,8 +68,9 @@ automatically on the poll interval (and on save / when opening files).
 
 ## Commands
 
-Run via the LSP command picker (`workspace: run language server command`)
-or, where available, from code actions on a commented line:
+Run via Zed's LSP command picker (see "Triggering these commands in Zed"),
+or from code actions on a commented line. The last two commands take
+arguments (comment id) and are therefore only offered as code actions:
 
 | Command id                       | What it does                                  |
 | -------------------------------- | --------------------------------------------- |
@@ -81,6 +82,8 @@ or, where available, from code actions on a commented line:
 | `pr-review.resolveThread`        | Resolve / unresolve the thread                |
 | `pr-review.viewOnGithub`         | Open the comment's permalink in the browser   |
 | `pr-review.listComments`         | Write & open an all-comments listing across every file |
+| `pr-review.deleteComment`        | Delete your review comment or reply (code action "Delete comment (you)") |
+| `pr-review.removeReaction`       | Remove your own reaction (code action "Remove 👍 (you)" etc.) |
 
 ### Triggering these commands in Zed
 

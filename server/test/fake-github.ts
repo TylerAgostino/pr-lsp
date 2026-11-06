@@ -29,6 +29,9 @@ export interface FakeState {
   graphqlFails?: boolean;
   /** When true, POST /pulls/{n}/comments answers 422 (drift/fallback testing). */
   rejectDirectComments?: boolean;
+  /** Individual reaction records (GET/DELETE /reactions, comment deletes). */
+  reactions: { id: number; commentId: number; content: string; login: string }[];
+  nextReactionId: number;
   comments: Record<string, unknown>[];
   reviews: Record<string, unknown>[];
   threads: FakeThread[];
@@ -58,6 +61,8 @@ export function emptyState(owner = "testowner", repo = "testrepo"): FakeState {
     reviews: [],
     threads: [],
     nextCommentId: 1000,
+    reactions: [],
+    nextReactionId: 900,
   };
 }
 
@@ -86,6 +91,10 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
 
     const P = "/api/v3";
     const repoPrefix = `${P}/repos/${state.owner}/${state.repo}`;
+
+    if (method === "GET" && path === `${P}/user`) {
+      return json(res, 200, { login: "testuser" });
+    }
 
     if (method === "GET" && path === `${repoPrefix}/pulls`) {
       const headFilter = reqUrl.searchParams.get("head");
@@ -161,18 +170,54 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
       return json(res, 201, { ...rec, html_url: `https://github.com/${state.owner}/${state.repo}/pull/${n}#pullrequestreview` });
     }
 
+    const summarizeReactions = (commentId: number): void => {
+      const c = state.comments.find((cc) => cc.id === commentId);
+      if (!c) return;
+      const mine = state.reactions.filter((r) => r.commentId === commentId);
+      const counts: Record<string, number> = { total_count: mine.length };
+      for (const r of mine) counts[r.content] = (counts[r.content] ?? 0) + 1;
+      c.reactions = counts;
+    };
+
     mm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/comments\/(\d+)\/reactions$/.exec(path);
-    if (mm && method === "POST") {
+    if (mm) {
       const id = Number(mm[1]);
-      const content = isRecord(body) && typeof body.content === "string" ? body.content : "?";
-      const c = state.comments.find((cc) => cc.id === id);
-      if (c) {
-        const reactions: Record<string, unknown> = isRecord(c.reactions) ? c.reactions : {};
-        const bump = (k: string, d: number): number => (typeof reactions[k] === "number" ? (reactions[k] as number) : d) + 1;
-        reactions[content] = bump(content, 0);
-        c.reactions = reactions;
+      if (method === "POST") {
+        const content = isRecord(body) && typeof body.content === "string" ? body.content : "?";
+        const rec = { id: state.nextReactionId++, commentId: id, content, login: "testuser" };
+        state.reactions.push(rec);
+        summarizeReactions(id);
+        return json(res, 201, { id: rec.id, content, user: { login: "testuser" } });
       }
-      return json(res, 201, { id: 1, content });
+      if (method === "GET") {
+        return json(
+          res,
+          200,
+          state.reactions
+            .filter((r) => r.commentId === id)
+            .map((r) => ({ id: r.id, content: r.content, user: { login: r.login } })),
+        );
+      }
+    }
+
+    mm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/comments\/(\d+)\/reactions\/(\d+)$/.exec(path);
+    if (mm && method === "DELETE") {
+      const id = Number(mm[1]);
+      const rxId = Number(mm[2]);
+      state.reactions = state.reactions.filter((r) => r.id !== rxId);
+      summarizeReactions(id);
+      res.writeHead(204);
+      return res.end();
+    }
+
+    mm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/comments\/(\d+)$/.exec(path);
+    if (mm && method === "DELETE") {
+      const id = Number(mm[1]);
+      state.comments = state.comments.filter((c) => c.id !== id);
+      state.reactions = state.reactions.filter((r) => r.commentId !== id);
+      for (const t of state.threads) t.commentIds = t.commentIds.filter((cid) => cid !== id);
+      res.writeHead(204);
+      return res.end();
     }
 
     if (method === "GET" && /^\/api\/v3\/repos\/[^/]+\/[^/]+\/commits\/[^/]+\/check-runs$/.test(path)) {

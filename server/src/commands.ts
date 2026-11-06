@@ -7,13 +7,17 @@ export const CMD_RESOLVE_THREAD = "pr-review.resolveThread";
 export const CMD_VIEW_ON_GITHUB = "pr-review.viewOnGithub";
 export const CMD_SUMMARY = "pr-review.summary";
 export const CMD_LIST_COMMENTS = "pr-review.listComments";
+export const CMD_DELETE_COMMENT = "pr-review.deleteComment";
+export const CMD_REMOVE_REACTION = "pr-review.removeReaction";
 
 export const ALL_COMMANDS: string[] = [
   CMD_REFRESH,
   CMD_DRAFT_REVIEW,
   CMD_CREATE_COMMENT_DRAFT,
   CMD_REACT,
+  CMD_REMOVE_REACTION,
   CMD_RESOLVE_THREAD,
+  CMD_DELETE_COMMENT,
   CMD_VIEW_ON_GITHUB,
   CMD_SUMMARY,
   CMD_LIST_COMMENTS,

@@ -4,8 +4,10 @@ import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CMD_CREATE_COMMENT_DRAFT,
+  CMD_DELETE_COMMENT,
   CMD_DRAFT_REVIEW,
   CMD_REACT,
+  CMD_REMOVE_REACTION,
   CMD_RESOLVE_THREAD,
 } from "../src/commands";
 import { TestClient } from "./client";
@@ -58,6 +60,7 @@ beforeAll(async () => {
     seedComment({ id: 11, body: "rename this", line: 5, user: { login: "octocat" } }),
     seedComment({ id: 12, body: "agree", in_reply_to_id: 11, line: 5, user: { login: "author" } }),
     seedComment({ id: 13, body: "explain line 20", line: 20 }),
+    seedComment({ id: 14, body: "my own note", line: 24, user: { login: "testuser" } }),
   );
   fake.state.threads.push({ id: "PT_ext11", isResolved: false, commentIds: [11, 12] });
   process.env.GITHUB_TOKEN = "faketoken";
@@ -96,7 +99,7 @@ describe("code actions and drafts", () => {
   it("opens with two threads anchored", async () => {
     client.openDoc(filePath, fs.readFileSync(filePath, "utf8"));
     const list = await client.waitForDiagnostics(uri, 15_000);
-    expect(list.length).toBe(2);
+    expect(list.length).toBe(3);
   });
 
   it("offers react/reply/resolve/view on a commented line", async () => {
@@ -135,9 +138,36 @@ describe("code actions and drafts", () => {
     expect((c!.reactions as Record<string, unknown>)["+1"]).toBe(1);
   });
 
-  it("resolve thread flips GraphQL state", async () => {
+  it("resolve/unresolve flips GraphQL state both ways", async () => {
     await client.execCommand(CMD_RESOLVE_THREAD, ["PT_ext11", true]);
     expect(fake.state.threads[0].isResolved).toBe(true);
+    // Unresolve used to report failure on success (result compared to
+    // `true`); the command must flip the state without erroring.
+    await client.execCommand(CMD_RESOLVE_THREAD, ["PT_ext11", false]);
+    expect(fake.state.threads[0].isResolved).toBe(false);
+  });
+
+  it("offers delete and reaction removal on your own comment only", async () => {
+    await client.execCommand(CMD_REACT, [14, "rocket"]);
+    const mine = (await client.codeActions(filePath, {
+      start: { line: 23, character: 0 },
+      end: { line: 23, character: 0 },
+    })) as { title: string; command?: { command: string; arguments?: unknown[] } }[];
+    const titles = mine.map((a) => a.title);
+    expect(titles).toContain("Delete comment (you)");
+    expect(titles).toContain("Remove 🚀 (you)");
+    const del = mine.find((a) => a.title === "Delete comment (you)");
+    expect(del!.command!.command).toBe(CMD_DELETE_COMMENT);
+    expect(del!.command!.arguments).toEqual([14]);
+    const rm = mine.find((a) => a.title === "Remove 🚀 (you)");
+    expect(rm!.command!.command).toBe(CMD_REMOVE_REACTION);
+    expect(rm!.command!.arguments).toEqual([14, "rocket"]);
+    const other = (await client.codeActions(filePath, {
+      start: { line: 4, character: 0 },
+      end: { line: 4, character: 0 },
+    })) as { title: string }[];
+    expect(other.map((a) => a.title)).not.toContain("Delete comment (you)");
+    expect(other.map((a) => a.title)).not.toContain("Remove 🚀 (you)");
   });
 
   it(
@@ -206,5 +236,13 @@ describe("code actions and drafts", () => {
     const posted = fake.state.reviews.find((r) => r.event === "APPROVE");
     expect(posted).toBeTruthy();
     expect(fs.existsSync(draft)).toBe(false);
+  });
+
+  it("delete command removes the comment upstream", async () => {
+    await client.execCommand(CMD_DELETE_COMMENT, [14]);
+    expect(
+      fake.requests.filter((r) => r.method === "DELETE" && /pulls\/comments\/14$/.test(r.path)).length,
+    ).toBe(1);
+    expect(fake.state.comments.some((c) => c.id === 14)).toBe(false);
   });
 });

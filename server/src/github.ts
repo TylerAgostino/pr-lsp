@@ -300,6 +300,42 @@ export class GithubClient {
     if (!isRecord(data)) return resolved;
     const node = isRecord(data[mutation]) ? data[mutation] : null;
     const thread = node && isRecord(node.thread) ? node.thread : null;
-    return thread ? thread.isResolved === true : resolved;
+    // Success is "the thread reports the state we asked for". Comparing
+    // against `true` (the old code) made every successful *unresolve*
+    // look like a failure to callers.
+    return thread ? thread.isResolved === resolved : resolved;
+  }
+
+  /** Login of the authenticated user (null when unknown); used to gate
+   *  delete/remove-reaction affordances. */
+  async getCurrentUser(): Promise<string | null> {
+    const data = await http("GET", `${apiRoot(this.cfg)}/user`, this.token);
+    return isRecord(data) && typeof data.login === "string" ? data.login : null;
+  }
+
+  /** Delete one review comment (works for replies too). 403 if not yours. */
+  async deleteReviewComment(owner: string, repo: string, commentId: number): Promise<void> {
+    await http("DELETE", `${this.repoBase(owner, repo)}/pulls/comments/${commentId}`, this.token);
+  }
+
+  /** Individual reactions on a review comment, for "remove yours". */
+  async listReactions(
+    owner: string,
+    repo: string,
+    commentId: number,
+  ): Promise<{ id: number; content: string; login: string }[]> {
+    const url = `${this.repoBase(owner, repo)}/pulls/comments/${commentId}/reactions?per_page=100`;
+    const data = await http("GET", url, this.token);
+    if (!Array.isArray(data)) return [];
+    const out: { id: number; content: string; login: string }[] = [];
+    for (const r of data) {
+      if (!isRecord(r) || typeof r.id !== "number" || typeof r.content !== "string") continue;
+      out.push({ id: r.id, content: r.content, login: isRecord(r.user) ? str(r.user.login) : "" });
+    }
+    return out;
+  }
+
+  async deleteReaction(owner: string, repo: string, commentId: number, reactionId: number): Promise<void> {
+    await http("DELETE", `${this.repoBase(owner, repo)}/pulls/comments/${commentId}/reactions/${reactionId}`, this.token);
   }
 }

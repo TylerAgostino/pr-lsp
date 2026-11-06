@@ -24,7 +24,7 @@ export class AppState {
   private refreshed: Promise<void> | null = null;
   private running = false;
   private followUp = false;
-
+  private loginCache: Promise<string | null> | null = null;
   constructor(readonly host: ServerHost) {}
 
   isDirty(doc: TextDocument): boolean {
@@ -321,6 +321,51 @@ export class AppState {
     const { owner, repo } = this.remote();
     const ok = await this.requireClient().setThreadResolved(owner, repo, threadId, resolved);
     if (!ok) throw new Error(`could not ${resolved ? "resolve" : "unresolve"} thread`);
+    await this.refresh(true);
+    await this.publishAll();
+  }
+
+  /** Authenticated login, fetched once per server run (null when unknown). */
+  whoAmI(): Promise<string | null> {
+    if (!this.loginCache) {
+      const c = this.client();
+      this.loginCache = c ? c.getCurrentUser().catch(() => null) : Promise.resolve(null);
+    }
+    return this.loginCache;
+  }
+
+  /** Contents of the reactions the authenticated user left on a comment. */
+  async myReactionContents(commentId: number): Promise<string[]> {
+    const me = await this.whoAmI();
+    if (!me || !this.repo?.remote) return [];
+    const { owner, repo } = this.repo.remote;
+    try {
+      const rxs = await this.requireClient().listReactions(owner, repo, commentId);
+      return rxs.filter((r) => r.login === me).map((r) => r.content);
+    } catch (e) {
+      this.log(`could not list reactions on comment ${commentId}: ${String(e instanceof Error ? e.message : e)}`);
+      return [];
+    }
+  }
+
+  async deleteComment(commentId: number): Promise<void> {
+    const { owner, repo } = this.remote();
+    await this.requireClient().deleteReviewComment(owner, repo, commentId);
+    await this.refresh(true);
+    await this.publishAll();
+  }
+
+  async removeReaction(commentId: number, content: string): Promise<void> {
+    const { owner, repo } = this.remote();
+    const me = await this.whoAmI();
+    const client = this.requireClient();
+    const rxs = await client.listReactions(owner, repo, commentId);
+    const mine = me ? rxs.find((r) => r.login === me && r.content === content) : undefined;
+    if (!mine) {
+      this.log(`no ${content} reaction by ${me ?? "unknown user"} on comment ${commentId} to remove`);
+      return;
+    }
+    await client.deleteReaction(owner, repo, commentId, mine.id);
     await this.refresh(true);
     await this.publishAll();
   }

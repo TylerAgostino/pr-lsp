@@ -11,10 +11,12 @@ import {
 import {
   ALL_COMMANDS,
   CMD_CREATE_COMMENT_DRAFT,
+  CMD_DELETE_COMMENT,
   CMD_DRAFT_REVIEW,
   CMD_LIST_COMMENTS,
   CMD_REACT,
   CMD_REFRESH,
+  CMD_REMOVE_REACTION,
   CMD_RESOLVE_THREAD,
   CMD_SUMMARY,
   CMD_VIEW_ON_GITHUB,
@@ -39,6 +41,10 @@ function quickFix(title: string, command: string, args: unknown[]): CodeAction {
     command: { title, command, arguments: args },
   };
 }
+
+const EMOJI_BY_CONTENT: Record<string, string> = Object.fromEntries(
+  REACTIONS.map((r) => [r.content, r.emoji]),
+);
 
 export function createHost(): ServerHost {
   const connection = createConnection();
@@ -135,7 +141,7 @@ export function wireLifecycle(host: ServerHost): void {
     return buildInlayHints(state.pr.number, lineLengths, positions);
   });
 
-  connection.onCodeAction((params) => {
+  connection.onCodeAction(async (params) => {
     const doc = host.documents.get(params.textDocument.uri);
     if (!doc || !state.pr) return [];
     const actions: CodeAction[] = [];
@@ -152,6 +158,21 @@ export function wireLifecycle(host: ServerHost): void {
         actions.push(quickFix(resolved ? "Unresolve thread" : "Resolve thread", CMD_RESOLVE_THREAD, [t.threadId, !resolved]));
       }
       actions.push(quickFix("View on GitHub", CMD_VIEW_ON_GITHUB, [t.top.html_url]));
+      const me = await state.whoAmI();
+      if (me) {
+        for (const c of [t.top, ...t.replies]) {
+          if (c.user?.login === me) {
+            actions.push(
+              quickFix(c === t.top ? "Delete comment (you)" : "Delete reply (you)", CMD_DELETE_COMMENT, [c.id]),
+            );
+          }
+        }
+        for (const content of await state.myReactionContents(t.top.id)) {
+          actions.push(
+            quickFix(`Remove ${EMOJI_BY_CONTENT[content] ?? content} (you)`, CMD_REMOVE_REACTION, [t.top.id, content]),
+          );
+        }
+      }
     }
     const selectionNonEmpty =
       sel.start.line !== sel.end.line || sel.start.character !== sel.end.character;
@@ -181,6 +202,12 @@ export function wireLifecycle(host: ServerHost): void {
           break;
         case CMD_RESOLVE_THREAD:
           await state.toggleThread(String(args[0]), args[1] !== false);
+          break;
+        case CMD_DELETE_COMMENT:
+          await state.deleteComment(Number(args[0]));
+          break;
+        case CMD_REMOVE_REACTION:
+          await state.removeReaction(Number(args[0]), String(args[1]));
           break;
         case CMD_VIEW_ON_GITHUB:
           state.viewOnGithub(String(args[0]));

@@ -137,6 +137,9 @@ describe("git + github integration", () => {
     const nowResolved = await client.setThreadResolved("testowner", "testrepo", "PRRT_abc", true);
     expect(nowResolved).toBe(true);
     expect(fake.state.threads[0].isResolved).toBe(true);
+    const nowUnresolved = await client.setThreadResolved("testowner", "testrepo", "PRRT_abc", false);
+    expect(nowUnresolved).toBe(true);
+    expect(fake.state.threads[0].isResolved).toBe(false);
 
     expect(parseReviewComment({})).toBeNull();
   });
@@ -158,6 +161,28 @@ describe("git + github integration", () => {
     expect(fake.postsMatching(/pulls\/42\/comments$/)).toHaveLength(1);
     expect(fake.state.comments).toHaveLength(1);
     expect(fake.state.comments[0]).toMatchObject({ path: "src/bar.ts", line: 6, body: "why 2?" });
+  });
+
+  it("lists, removes own reactions, and deletes comments", async () => {
+    const state = emptyState();
+    state.comments.push(
+      seedComment({ id: 31, pr: 42, path: "src/foo.ts", line: 5, body: "mine", login: "testuser", commitId: "sha" }),
+    );
+    fake = await startFakeGithub(state);
+    const client = new GithubClient(cfgWith(fake.url), "fake-token");
+
+    expect(await client.getCurrentUser()).toBe("testuser");
+
+    await client.addReaction("testowner", "testrepo", 31, "+1");
+    const rxs = await client.listReactions("testowner", "testrepo", 31);
+    expect(rxs).toHaveLength(1);
+    expect(rxs[0]).toMatchObject({ content: "+1", login: "testuser" });
+
+    await client.deleteReaction("testowner", "testrepo", 31, rxs[0]!.id);
+    expect(await client.listReactions("testowner", "testrepo", 31)).toHaveLength(0);
+
+    await client.deleteReviewComment("testowner", "testrepo", 31);
+    expect(fake.state.comments).toHaveLength(0);
   });
 
   it("returns null context for a non-git workspace", async () => {
