@@ -10,6 +10,7 @@ export const CMD_LIST_COMMENTS = "pr-review.listComments";
 export const CMD_POST_DRAFTS = "pr-review.postDrafts";
 export const CMD_DELETE_COMMENT = "pr-review.deleteComment";
 export const CMD_REMOVE_REACTION = "pr-review.removeReaction";
+export const CMD_POST_DRAFT = "pr-review.postDraft";
 
 export const ALL_COMMANDS: string[] = [
   CMD_REFRESH,
@@ -23,6 +24,7 @@ export const ALL_COMMANDS: string[] = [
   CMD_SUMMARY,
   CMD_LIST_COMMENTS,
   CMD_POST_DRAFTS,
+  CMD_POST_DRAFT,
 ];
 
 // GitHub reaction content values (API-legal).

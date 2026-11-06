@@ -1,3 +1,5 @@
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { CodeActionKind, type CodeAction } from "vscode-languageserver";
 import {
@@ -15,6 +17,7 @@ import {
   CMD_DRAFT_REVIEW,
   CMD_LIST_COMMENTS,
   CMD_POST_DRAFTS,
+  CMD_POST_DRAFT,
   CMD_REACT,
   CMD_REFRESH,
   CMD_REMOVE_REACTION,
@@ -25,6 +28,7 @@ import {
 } from "./commands";
 import { configFromSettings, type EffectiveConfig } from "./config";
 import { buildHoverMarkdown } from "./hover";
+import { draftDir, DRAFT_FILE_RE, isDraftPath } from "./drafts";
 import { buildInlayHints } from "./inlayhints";
 import { AppState } from "./state";
 
@@ -144,8 +148,18 @@ export function wireLifecycle(host: ServerHost): void {
 
   connection.onCodeAction(async (params) => {
     const doc = host.documents.get(params.textDocument.uri);
-    if (!doc || !state.pr) return [];
+    if (!doc || !state.pr || !state.repo) return [];
     const actions: CodeAction[] = [];
+    let docFs = "";
+    try {
+      docFs = fileURLToPath(doc.uri);
+    } catch {
+      /* non-file uri */
+    }
+    // Inside a draft buffer: the only useful action is publishing it.
+    if (DRAFT_FILE_RE.test(path.basename(docFs)) && isDraftPath(docFs, draftDir(state.repo.root, host.config.draftsDir))) {
+      return [quickFix("Publish this draft to GitHub", CMD_POST_DRAFT, [docFs])];
+    }
     const anchored = state.anchoredThreadsForDoc(doc);
     const sel = params.range;
     const hits = anchored.filter((t) => t.anchor.line >= sel.start.line && t.anchor.line <= sel.end.line);
@@ -247,6 +261,9 @@ export function wireLifecycle(host: ServerHost): void {
           break;
         case CMD_POST_DRAFTS:
           await state.postDrafts();
+          break;
+        case CMD_POST_DRAFT:
+          await state.postDraft(String(args[0]));
           break;
         default:
           break;

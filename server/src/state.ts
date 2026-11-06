@@ -446,9 +446,21 @@ export class AppState {
     } catch {
       return false;
     }
+    if (DRAFT_FILE_RE.test(path.basename(fsPath))) this.log(`didSave received for draft: ${fsPath}`);
     if (!isDraftPath(fsPath, draftDir(this.repo.root, this.host.config.draftsDir))) return false;
     await this.postDraftFile(fsPath, true);
     return true;
+  }
+
+
+  /** Code action "Publish this draft to GitHub" run from inside a draft buffer. */
+  async postDraft(fsPath: string): Promise<void> {
+    if (!this.repo) return;
+    if (!isDraftPath(fsPath, draftDir(this.repo.root, this.host.config.draftsDir))) {
+      this.error(`not a draft file: ${fsPath}`);
+      return;
+    }
+    await this.postDraftFile(fsPath, true);
   }
 
   /**
@@ -602,7 +614,7 @@ export class AppState {
       }
       this.warnedDrafts.add(f);
       void this.host.connection.window.showInformationMessage(
-        `pr-review: unposted draft "${name}" — save it in the editor, or run pr-review.postDrafts`,
+        `pr-review: unposted draft "${name}" (in ${dir}) — save it, open it and run "Publish this draft to GitHub" (code action), or run pr-review.postDrafts`,
       );
     }
   }

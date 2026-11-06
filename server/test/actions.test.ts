@@ -300,4 +300,20 @@ describe("code actions and drafts", () => {
     expect(fs.existsSync(seed)).toBe(true);
     fs.unlinkSync(seed);
   });
+
+  it("draft buffers offer a Publish action that posts the draft", async () => {
+    await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 9]);
+    const draft = onlyDraft("comment-");
+    rewriteBody(draft, "published via action");
+    client.openDoc(draft, fs.readFileSync(draft, "utf8"), "markdown");
+    const acts = (await client.codeActions(draft, {
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 0 },
+    })) as { title: string; command?: { command: string; arguments?: unknown[] } }[];
+    const pub = acts.find((a) => a.title === "Publish this draft to GitHub");
+    expect(pub?.command).toBeTruthy();
+    await client.execCommand(pub!.command!.command, pub!.command!.arguments);
+    await waitUntil(() => fake.state.comments.some((c) => c.body === "published via action"));
+    expect(fs.existsSync(draft)).toBe(false);
+  });
 });

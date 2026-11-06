@@ -56,7 +56,7 @@ for how Zed surfaces these to you.
     "settings": {
       "githubBaseUrl": "",        // GHE root, e.g. "https://ghe.example.com"
       "inlayHints": true,         // "◈ PR: N comments" badges
-      "draftsDir": ".pr-review", // where draft files live (auto-added to .git/info/exclude)
+      "draftsDir": ".pr-review", // where draft files live (auto-added to .git/info/exclude; values inside .git/ are corrected to .pr-review)
       "pollIntervalMs": 30000     // background refresh interval
     }
   }
@@ -85,6 +85,7 @@ arguments (comment id) and are therefore only offered as code actions:
 | `pr-review.postDrafts`           | Post every edited draft on disk (explicit signal; see "Draft files") |
 | `pr-review.deleteComment`        | Delete your review comment or reply (code action "Delete comment (you)") |
 | `pr-review.removeReaction`       | Remove your own reaction (code action "Remove 👍 (you)" etc.) |
+| `pr-review.postDraft`            | Publish the draft you're editing (code action "Publish this draft to GitHub" inside a draft file) |
 
 ### Triggering these commands in Zed
 
@@ -117,11 +118,13 @@ Writing is deliberately file-based so you can compose in the editor:
    `line`, or `event` for reviews) and a seed body. The folder is added
    to `.git/info/exclude` automatically, so it never appears in
    `git status` and is never committed.
-3. Edit it, then post it with either explicit signal:
+3. Edit it, then post it with any explicit signal:
    - **Save the file** in the editor, or
    - run **`pr-review.postDrafts`** (palette), which posts every edited
      draft on disk — useful when your editor doesn't route buffer saves
      to the language server, or you edited drafts outside it.
+   - open the draft file and run the **Publish this draft to GitHub** code
+     action (`Ctrl-.` / `Cmd-.` on any line).
 
 The server posts, deletes the file, and refreshes annotations. Nothing
 posts itself — only a save or the command does, and untouched seed

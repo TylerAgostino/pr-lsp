@@ -13,9 +13,10 @@ export interface EffectiveConfig {
   githubBaseUrl: string;
   /** Render end-of-line inlay hint badges on commented lines. */
   inlayHints: boolean;
-  /** Directory (workspace-relative) holding draft files. Files under .git/
-   *  never reach the language server as saved buffers, so drafts must live
-   *  in a worktree-visible directory. */
+  /** Directory (workspace-relative) holding draft files. Must be visible to
+   *  the editor's worktree: values inside `.git/` are silently corrected to
+   *  `.pr-review` because buffers under `.git/` never receive save or code
+   *  action notifications (the drafts would sit unposted forever). */
   draftsDir: string;
   /** Milliseconds between background .git/HEAD checks (branch switch refresh). */
   pollIntervalMs: number;
@@ -35,12 +36,21 @@ interface RawSettings {
   pollIntervalMs?: unknown;
 }
 
+/**
+ * A draftsDir pointing inside `.git/` can never work: the editor does not
+ * expose those paths to its language servers. Correct it to the default.
+ */
+export function sanitizeDraftsDir(value: string): string {
+  const norm = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  return norm === ".git" || norm.startsWith(".git/") ? ".pr-review" : value;
+}
+
 export function configFromSettings(raw: unknown): EffectiveConfig {
   const s: RawSettings = (raw ?? {}) as RawSettings;
   const cfg: EffectiveConfig = { ...DEFAULT_CONFIG };
   if (typeof s.githubBaseUrl === "string") cfg.githubBaseUrl = s.githubBaseUrl.replace(/\/+$/, "");
   if (typeof s.inlayHints === "boolean") cfg.inlayHints = s.inlayHints;
-  if (typeof s.draftsDir === "string" && s.draftsDir.length > 0) cfg.draftsDir = s.draftsDir;
+  if (typeof s.draftsDir === "string" && s.draftsDir.length > 0) cfg.draftsDir = sanitizeDraftsDir(s.draftsDir);
   if (typeof s.pollIntervalMs === "number" && s.pollIntervalMs > 0) cfg.pollIntervalMs = s.pollIntervalMs;
   return cfg;
 }
