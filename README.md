@@ -82,6 +82,26 @@ or, where available, from code actions on a commented line:
 | `pr-review.viewOnGithub`         | Open the comment's permalink in the browser   |
 | `pr-review.listComments`         | Write & open an all-comments listing across every file |
 
+### Triggering these commands in Zed
+
+Zed does not list language-server commands in the palette individually.
+Zed ≥ 1.21 ships a dedicated picker: run
+**`lsp command selector: toggle`** (search "lsp command" in the palette)
+with the cursor in a file this server handles — it opens
+"Select a language server command…" listing `pr-review.refresh`,
+`pr-review.summary`, `pr-review.draftReview`, `pr-review.listComments`,
+and friends; selecting one executes it immediately. The picker only
+appears when the active buffer actually has servers advertising commands.
+Optional key binding (`keymap.json`):
+
+```json
+[{ "context": "Workspace", "bindings": { "f1": "lsp_command_selector:toggle" } }]
+```
+
+Every command also remains reachable without the picker: the code-action
+menu on a comment line covers react/reply/resolve/view, and selection →
+"Add review comment" covers new comments.
+
 ## Draft files
 
 Writing is deliberately file-based so you can compose in the editor:
@@ -241,8 +261,16 @@ npm install --prefix "$LOCALAPPDATA/Zed/extensions/work/pr-review-lsp" \
   ./pr-review-lsp-0.1.0.tgz   # macOS: ~/Library/Application\ Support/Zed/extensions/work/...
 ```
 
-Re-run this after changing server code; rebuild the extension (reload Zed)
-after changing `src/lib.rs`.
+To iterate on server code against a running Zed: rebuild, copy the bundle
+into the extension's work directory, then restart the server (palette:
+`workspace: restart language servers`, or just close and reopen Zed):
+
+```sh
+npm run build
+cp dist/server.js "$LOCALAPPDATA/Zed/extensions/work/pr-review-lsp/node_modules/pr-review-lsp/dist/server.js"
+```
+
+Rebuild the extension (reload Zed) after changing `src/lib.rs`.
 
 Repository layout:
 

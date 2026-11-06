@@ -27,6 +27,8 @@ export interface FakeState {
   prs: FakePr[];
   /** When true, the reviewThreads GraphQL query returns an errors payload. */
   graphqlFails?: boolean;
+  /** When true, POST /pulls/{n}/comments answers 422 (drift/fallback testing). */
+  rejectDirectComments?: boolean;
   comments: Record<string, unknown>[];
   reviews: Record<string, unknown>[];
   threads: FakeThread[];
@@ -105,19 +107,8 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
     }
     if (mm && method === "POST") {
       const n = Number(mm[1]);
-      if (isRecord(body) && typeof body.event === "string") {
-        // 422 fallback path: COMMENT review carrying inline comments
-        state.reviews.push({ id: state.reviews.length + 1, event: body.event });
-        const list = Array.isArray(body.comments) ? body.comments : [];
-        for (const c of list) {
-          if (isRecord(c)) {
-            state.comments.push({ ...c, id: state.nextCommentId++, pull_request_review_id: 1 });
-          }
-        }
-        return json(res, 201, {
-          id: state.reviews.length,
-          html_url: `https://github.com/${state.owner}/${state.repo}/pull/${n}#pullrequestreview`,
-        });
+      if (state.rejectDirectComments) {
+        return json(res, 422, { message: "Fake: direct line-note endpoint rejected" });
       }
       const created: Record<string, unknown> = {
         ...(isRecord(body) ? body : {}),
@@ -155,13 +146,19 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
 
     mm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path);
     if (mm && method === "POST") {
+      const n = Number(mm[1]);
+      // A COMMENT review may carry inline comments; they become review comments.
+      const list = isRecord(body) && Array.isArray(body.comments) ? body.comments : [];
+      for (const c of list) {
+        if (isRecord(c)) state.comments.push({ ...c, id: state.nextCommentId++, pull_request_review_id: state.reviews.length + 1 });
+      }
       const rec: Record<string, unknown> = {
         ...(isRecord(body) ? body : {}),
         id: state.reviews.length + 1,
         submitted_at: "2026-01-01T00:00:00Z",
       };
       state.reviews.push(rec);
-      return json(res, 201, rec);
+      return json(res, 201, { ...rec, html_url: `https://github.com/${state.owner}/${state.repo}/pull/${n}#pullrequestreview` });
     }
 
     mm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/comments\/(\d+)\/reactions$/.exec(path);

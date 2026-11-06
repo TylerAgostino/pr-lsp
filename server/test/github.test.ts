@@ -140,6 +140,25 @@ describe("git + github integration", () => {
 
     expect(parseReviewComment({})).toBeNull();
   });
+  it("falls back to a COMMENT review when the direct endpoint 422s", async () => {
+    const state = emptyState();
+    state.rejectDirectComments = true;
+    fake = await startFakeGithub(state);
+
+    const client = new GithubClient(cfgWith(fake.url), "fake-token");
+    await client.createReviewComment("testowner", "testrepo", 42, "why 2?", "src/bar.ts", 6);
+
+    const fallbacks = fake.postsMatching(/pulls\/42\/reviews$/);
+    expect(fallbacks).toHaveLength(1);
+    expect(fallbacks[0].body).toMatchObject({
+      event: "COMMENT",
+      comments: [{ path: "src/bar.ts", line: 6, side: "RIGHT", body: "why 2?" }],
+    });
+    // ...and the rejected-direct path never happened except the 422'd attempt
+    expect(fake.postsMatching(/pulls\/42\/comments$/)).toHaveLength(1);
+    expect(fake.state.comments).toHaveLength(1);
+    expect(fake.state.comments[0]).toMatchObject({ path: "src/bar.ts", line: 6, body: "why 2?" });
+  });
 
   it("returns null context for a non-git workspace", async () => {
     const other = mkdtempSync(`${os.tmpdir()}/prl-nogit-`);

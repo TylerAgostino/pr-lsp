@@ -216,14 +216,13 @@ export class GithubClient {
     path: string,
     line: number,
   ): Promise<void> {
-    const url = `${this.repoBase(owner, repo)}/pulls/${prNumber}/comments`;
     try {
-      await http("POST", url, this.token, { body, path, line });
+      await http("POST", `${this.repoBase(owner, repo)}/pulls/${prNumber}/comments`, this.token, { body, path, line, side: "RIGHT" });
     } catch (e) {
       if (e instanceof GithubApiError && e.status === 422) {
-        await http("POST", url, this.token, {
+        await http("POST", `${this.repoBase(owner, repo)}/pulls/${prNumber}/reviews`, this.token, {
           event: "COMMENT",
-          comments: [{ path, line, body }],
+          comments: [{ path, line, side: "RIGHT", body }],
         });
         return;
       }
