@@ -25,6 +25,8 @@ export interface FakeState {
   owner: string;
   repo: string;
   prs: FakePr[];
+  /** When true, the reviewThreads GraphQL query returns an errors payload. */
+  graphqlFails?: boolean;
   comments: Record<string, unknown>[];
   reviews: Record<string, unknown>[];
   threads: FakeThread[];
@@ -193,6 +195,9 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
         return json(res, 200, {
           data: { [key]: { thread: { id: threadId, isResolved: thread ? thread.isResolved : doResolve } } },
         });
+      }
+      if (q.includes("reviewThreads") && state.graphqlFails) {
+        return json(res, 200, { data: null, errors: [{ message: "Fake GraphQL failure" }] });
       }
       if (q.includes("reviewThreads")) {
         return json(res, 200, {

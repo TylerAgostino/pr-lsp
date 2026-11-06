@@ -25,6 +25,7 @@ export function fixtureContent(): string {
   return fixtureLines().join("\n") + "\n";
 }
 
+
 export interface FixtureRepo {
   dir: string;
   filePath: string;

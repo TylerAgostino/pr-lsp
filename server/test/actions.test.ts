@@ -113,12 +113,13 @@ describe("code actions and drafts", () => {
     expect(react!.command!.arguments).toEqual([11, "+1"]);
   });
 
-  it("offers comment draft only with a non-empty selection", async () => {
+  it("offers comment draft on a plain line with cursor or selection", async () => {
     const plain = (await client.codeActions(filePath, {
       start: { line: 30, character: 0 },
       end: { line: 30, character: 0 },
-    })) as { title: string }[];
-    expect(plain.length).toBe(0);
+    })) as { title: string; command?: { command: string; arguments?: unknown[] } }[];
+    expect(plain.map((a) => a.title)).toEqual(["Add PR review comment…"]);
+    expect(plain[0]!.command!.arguments).toEqual([uri, 31]);
     const sel = (await client.codeActions(filePath, {
       start: { line: 2, character: 0 },
       end: { line: 5, character: 10 },

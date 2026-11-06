@@ -154,7 +154,11 @@ export function wireLifecycle(host: ServerHost): void {
     }
     const selectionNonEmpty =
       sel.start.line !== sel.end.line || sel.start.character !== sel.end.character;
-    if (selectionNonEmpty) {
+    // New inline comment: offered for any non-empty selection (on top of
+    // thread actions if one intersects), and also for a collapsed cursor
+    // when no thread is under it. Clients vary on whether they forward
+    // selections as non-empty ranges; a silent missing entry point is worse.
+    if (selectionNonEmpty || hits.length === 0) {
       const rel = state.relativePath(doc.uri);
       if (rel) {
         actions.push(quickFix("Add PR review comment…", CMD_CREATE_COMMENT_DRAFT, [doc.uri, sel.start.line + 1]));
