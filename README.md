@@ -123,9 +123,13 @@ Writing is deliberately file-based so you can compose in the editor:
      draft on disk — useful when your editor doesn't route buffer saves
      to the language server, or you edited drafts outside it.
 
-The server posts, deletes the file, and refreshes annotations. Nothing is
-ever posted automatically — untouched seed templates are ignored by both
-paths, so autosave can't post a half-written comment.
+The server posts, deletes the file, and refreshes annotations. Nothing
+posts itself — only a save or the command does, and untouched seed
+templates are ignored by both paths. A save posts the draft's text
+*as-is*, though: with editor autosave on, losing focus can commit a
+half-finished comment like any other file. To pick the commit moment
+yours, compose freely and run `pr-review.postDrafts` when it reads right
+(or disable autosave while editing drafts).
 
 If posting fails you'll get an error notification (`pr-review: failed to
 post …`) — common causes: a fine-grained PAT without **Pull requests:

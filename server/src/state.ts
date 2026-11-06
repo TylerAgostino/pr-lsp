@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import { anchorToBuffer, type Anchor } from "./anchor";
 import { resolveToken } from "./auth";
-import { draftDir, DRAFT_FILE_RE, draftSeedBody, isDraftPath, isUneditedDraft, parseDraft, writeDraft } from "./drafts";
+import { draftDir, DRAFT_FILE_RE, draftSeedBody, isDraftPath, isUneditedDraft, migrateLegacyDrafts, parseDraft, writeDraft } from "./drafts";
 import { buildDiagnostics, renderCommentListing, type AnchoredThread } from "./diagnostics";
 import { resolveRepo, type RepoInfo } from "./git";
 import { GithubClient, type PullRequest, type ReviewComment, type ThreadState } from "./github";
@@ -447,14 +447,14 @@ export class AppState {
       return false;
     }
     if (!isDraftPath(fsPath, draftDir(this.repo.root, this.host.config.draftsDir))) return false;
-    await this.postDraftFile(fsPath);
+    await this.postDraftFile(fsPath, true);
     return true;
   }
 
   /**
    * Explicit commit signal for drafts (command `pr-review.postDrafts`).
    * Posts every edited draft on disk; untouched seed drafts are never
-   * posted, and nothing runs automatically — safe against autosave.
+   * posted. Nothing runs on its own — only a save or this command posts.
    */
   async postDrafts(): Promise<void> {
     if (!this.repo) return;
@@ -541,24 +541,19 @@ export class AppState {
   }
 
   /**
-   * Drafts must sit where the editor routes save notifications to this
-   * server; files under .git/ are excluded from the worktree and never do.
-   * Move any drafts left in the old `.git/pr-review` default and keep the
-   * drafts directory out of `git status` via `.git/info/exclude`.
+   * Drafts moved to a worktree-visible default: whether editors route
+   * buffer saves for files under `.git/` to language servers is
+   * client-specific, so the default avoids the question entirely. Move any
+   * drafts left in the old `.git/pr-review` location and keep the drafts
+   * directory out of `git status` via `.git/info/exclude` (local-only,
+   * never committed).
    */
   private ensureDraftsLocation(): void {
     if (!this.repo) return;
     const dir = draftDir(this.repo.root, this.host.config.draftsDir);
     const legacy = path.join(this.repo.root, ".git", "pr-review");
     if (path.normalize(dir) !== path.normalize(legacy)) {
-      try {
-        for (const name of fs.readdirSync(legacy)) {
-          const to = path.join(dir, name);
-          if (!fs.existsSync(to)) fs.renameSync(path.join(legacy, name), to);
-        }
-      } catch {
-        /* no legacy drafts */
-      }
+      migrateLegacyDrafts(legacy, dir);
     }
     this.updateExclude(dir);
   }

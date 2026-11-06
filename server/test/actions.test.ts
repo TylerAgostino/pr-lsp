@@ -7,6 +7,7 @@ import {
   CMD_DELETE_COMMENT,
   CMD_DRAFT_REVIEW,
   CMD_POST_DRAFTS,
+  CMD_REFRESH,
   CMD_REACT,
   CMD_REMOVE_REACTION,
   CMD_RESOLVE_THREAD,
@@ -282,6 +283,20 @@ describe("code actions and drafts", () => {
     await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 7]);
     const seed = onlyDraft("comment-");
     await client.execCommand(CMD_POST_DRAFTS, []);
+    expect(fs.existsSync(seed)).toBe(true);
+    fs.unlinkSync(seed);
+  });
+
+  it("saving an untouched seed draft posts nothing", async () => {
+    await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 9]);
+    const seed = onlyDraft("comment-");
+    const before = fake.state.comments.length;
+    client.openDoc(seed, fs.readFileSync(seed, "utf8"));
+    client.saveDoc(seed); // e.g. an autosave of the template
+    // LSP messages share one FIFO connection: this request is served only
+    // after the didSave handler has run, so no clock waiting is needed.
+    await client.execCommand(CMD_REFRESH, []);
+    expect(fake.state.comments.length).toBe(before);
     expect(fs.existsSync(seed)).toBe(true);
     fs.unlinkSync(seed);
   });

@@ -45,6 +45,35 @@ export function isDraftPath(absPath: string, dir: string): boolean {
   return !rel.startsWith("..") && !path.isAbsolute(rel) && rel.length > 0;
 }
 
+/**
+ * Move drafts written under the old `.git/pr-review` default into the
+ * current drafts directory. The destination is created BEFORE any rename;
+ * per-file failures never abort the rest. Silent no-op when there is no
+ * legacy directory or nothing in it.
+ */
+export function migrateLegacyDrafts(legacyDir: string, targetDir: string): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(legacyDir);
+  } catch {
+    return;
+  }
+  if (names.length === 0) return;
+  try {
+    fs.mkdirSync(targetDir, { recursive: true });
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (fs.existsSync(path.join(targetDir, name))) continue;
+    try {
+      fs.renameSync(path.join(legacyDir, name), path.join(targetDir, name));
+    } catch {
+      /* leave the straggler for the next startup */
+    }
+  }
+}
+
 /** Filename shape produced by writeDraft; listing-* listings excluded. */
 export const DRAFT_FILE_RE = /^(comment|reply|review)(-\d+)*\.md$/;
 
