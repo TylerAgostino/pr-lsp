@@ -262,8 +262,8 @@ npm install --prefix "$LOCALAPPDATA/Zed/extensions/work/pr-review-lsp" \
 ```
 
 To iterate on server code against a running Zed: rebuild, copy the bundle
-into the extension's work directory, then restart the server (palette:
-`workspace: restart language servers`, or just close and reopen Zed):
+into the extension's work directory, then fully quit and reopen Zed (the
+adapter launches the server at startup):
 
 ```sh
 npm run build
