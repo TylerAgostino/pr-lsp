@@ -32,6 +32,8 @@ export interface FakeState {
   /** Individual reaction records (GET/DELETE /reactions, comment deletes). */
   reactions: { id: number; commentId: number; content: string; login: string }[];
   nextReactionId: number;
+  /** When true, GET /user answers 500 (identity-lookup retry testing). */
+  userFails?: boolean;
   comments: Record<string, unknown>[];
   reviews: Record<string, unknown>[];
   threads: FakeThread[];
@@ -93,6 +95,7 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
     const repoPrefix = `${P}/repos/${state.owner}/${state.repo}`;
 
     if (method === "GET" && path === `${P}/user`) {
+      if (state.userFails) return json(res, 500, { message: "Fake: user lookup failed" });
       return json(res, 200, { login: "testuser" });
     }
 

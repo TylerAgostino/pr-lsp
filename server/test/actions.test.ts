@@ -102,6 +102,23 @@ describe("code actions and drafts", () => {
     expect(list.length).toBe(3);
   });
 
+  it("retries the identity lookup after a failure", async () => {
+    // A failed GET /user must not permanently hide the (you) affordances.
+    // Runs before any test that can cache a successful identity.
+    fake.state.userFails = true;
+    const down = (await client.codeActions(filePath, {
+      start: { line: 23, character: 0 },
+      end: { line: 23, character: 0 },
+    })) as { title: string }[];
+    expect(down.map((a) => a.title)).not.toContain("Delete comment (you)");
+    fake.state.userFails = false;
+    const up = (await client.codeActions(filePath, {
+      start: { line: 23, character: 0 },
+      end: { line: 23, character: 0 },
+    })) as { title: string }[];
+    expect(up.map((a) => a.title)).toContain("Delete comment (you)");
+  });
+
   it("offers react/reply/resolve/view on a commented line", async () => {
     const acts = (await client.codeActions(filePath, {
       start: { line: 4, character: 0 },

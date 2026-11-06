@@ -325,11 +325,18 @@ export class AppState {
     await this.publishAll();
   }
 
-  /** Authenticated login, fetched once per server run (null when unknown). */
+  /** Authenticated login. Failed lookups are NOT cached: a rate limit or
+   *  network blip must not hide delete/remove affordances for the whole
+   *  server run, so a null result clears the cache and the next call
+   *  retries. */
   whoAmI(): Promise<string | null> {
     if (!this.loginCache) {
       const c = this.client();
-      this.loginCache = c ? c.getCurrentUser().catch(() => null) : Promise.resolve(null);
+      const p = c ? c.getCurrentUser().catch(() => null) : Promise.resolve(null);
+      this.loginCache = p;
+      void p.then((login) => {
+        if (login === null && this.loginCache === p) this.loginCache = null;
+      });
     }
     return this.loginCache;
   }
