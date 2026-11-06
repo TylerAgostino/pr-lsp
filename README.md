@@ -106,27 +106,30 @@ cd server && npm install && npm run build
 node "$PWD/dist/server.js" --stdio   # the LSP launch command
 ```
 
-Two caveats that apply to every non-Zed client:
-
+- **The `--stdio` flag is required** — launched without it the server exits
+  with "Connection input stream is not set" (verified against the built
+  bundle: with the flag it answers `initialize` with
+  hover/code-action/inlay-hint/execute-command capabilities).
 - **Auth**: set `GITHUB_TOKEN` (or `GH_TOKEN`) in the environment that
   launches the server. The `gh auth token` fallback lives in the Zed
   adapter, so non-Zed clients need the env var.
 - **Settings** (same keys as the Zed `settings` block above) are passed as
   LSP `initializationOptions` in the shape `{ "settings": { ... } }`.
 
-### Kiro CLI — supported today (custom LSP config)
+### Kiro CLI — custom LSP config (`lsp.json`)
 
-Kiro CLI supports workspace-scoped custom language servers
-([code intelligence docs](https://kiro.dev/docs/tools/code-intelligence/)).
+Kiro CLI supports workspace-scoped custom language servers; the config
+below follows the schema documented in Kiro's
+[code intelligence docs](https://kiro.dev/docs/tools/code-intelligence/).
 From the project root:
 
 ```text
 /code init
 ```
 
-then add an entry (path created by your build: project-root `lsp.json` or
-`.kiro/settings/lsp.json`) merging into its `languages` map — one entry per
-language you want reviewed, since Kiro matches servers by language:
+`/code init` creates `.kiro/settings/lsp.json` (Kiro CLI auto-loads it on
+startup when present). Merge in an entry per language you want reviewed,
+since Kiro matches servers by language:
 
 ```json
 {
@@ -144,10 +147,11 @@ language you want reviewed, since Kiro matches servers by language:
 ```
 
 Copy that entry for each language (change `file_extensions`), then
-`/code init -f` and check with `/code status` / `/code logs`. PR review
-diagnostics/hover flow through Kiro's LSP-backed code intelligence. Kiro
-CLI's custom-LSP coverage varies per language — if diagnostics arrive but
-hover or code actions don't, that's a Kiro limitation, not a server bug.
+`/code init -f` and check with `/code status` / `/code logs`. The server
+itself is verified to speak LSP over stdio (see above), but this exact
+`lsp.json` wiring has not been exercised end-to-end inside Kiro CLI — if
+diagnostics arrive but hover or code actions don't, that's a Kiro
+custom-LSP limitation, not a server bug.
 
 ### Kiro IDE / VS Code — needs a client extension (not shipped yet)
 
