@@ -6,6 +6,7 @@ import { anchorToBuffer, type Anchor } from "./anchor";
 import { resolveToken } from "./auth";
 import { draftDir, DRAFT_FILE_RE, draftSeedBody, isDraftPath, isUneditedDraft, migrateLegacyDrafts, parseDraft, writeDraft } from "./drafts";
 import { buildDiagnostics, renderCommentListing, type AnchoredThread } from "./diagnostics";
+import { DiagnosticSeverity } from "vscode-languageserver";
 import { resolveRepo, type RepoInfo } from "./git";
 import { GithubClient, type PullRequest, type ReviewComment, type ThreadState } from "./github";
 import { attachThreadState, groupThreads, type Thread } from "./model";
@@ -218,7 +219,7 @@ export class AppState {
     const doc = this.host.documents.get(uri);
     if (!doc) return;
     const lineLengths = doc.getText().split(/\r?\n/).map((l) => l.length);
-    const diags = buildDiagnostics(lineLengths, this.anchoredThreadsForDoc(doc));
+    const diags = buildDiagnostics(lineLengths, this.anchoredThreadsForDoc(doc), this.annotationSeverity());
     this.host.connection.sendDiagnostics({ uri, diagnostics: diags });
   }
 
@@ -235,7 +236,10 @@ export class AppState {
         if (this.host.documents.all().some((d) => this.relativePath(d.uri) === g.rel)) continue;
         if (g.anchored.length === 0) continue;
         const uri = pathToFileURL(path.join(this.repo.root, g.rel)).href;
-        this.host.connection.sendDiagnostics({ uri, diagnostics: buildDiagnostics(g.lineLengths, g.anchored) });
+        this.host.connection.sendDiagnostics({
+          uri,
+          diagnostics: buildDiagnostics(g.lineLengths, g.anchored, this.annotationSeverity()),
+        });
         active.add(uri);
       }
     }
@@ -435,6 +439,18 @@ export class AppState {
     this.openDraftInEditor(file);
     this.log(`comment listing written: ${file}`);
     return file;
+  }
+
+  /** Configured string severity -> LSP enum. Unknown values can't occur (parser). */
+  private annotationSeverity(): DiagnosticSeverity {
+    switch (this.host.config.annotationSeverity) {
+      case "information":
+        return DiagnosticSeverity.Information;
+      case "hint":
+        return DiagnosticSeverity.Hint;
+      default:
+        return DiagnosticSeverity.Warning;
+    }
   }
 
   /** Handles saving a draft file (LSP didSave): posts to GitHub, deletes on success. */

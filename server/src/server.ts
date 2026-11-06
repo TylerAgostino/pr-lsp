@@ -57,14 +57,17 @@ export function createHost(): ServerHost {
   return {
     connection,
     documents,
-    config: { githubBaseUrl: "", inlayHints: true, draftsDir: ".pr-review", pollIntervalMs: 30_000 },
+    config: { githubBaseUrl: "", inlayHints: true, annotationSeverity: "warning", draftsDir: ".pr-review", pollIntervalMs: 30_000 },
     workspaceRoot: null,
   };
 }
 
 /** Apply raw settings; warn (to editor logs) when a `.git/` draftsDir is corrected. */
 function applySettings(host: ServerHost, raw: unknown): void {
-  host.config = configFromSettings(raw);
+  // didChangeConfiguration may deliver a partial object; merge over the
+  // previous effective config so untouched keys keep their values.
+  const prev = host.config as unknown as Record<string, unknown>;
+  host.config = configFromSettings(typeof raw === "object" && raw !== null ? { ...prev, ...raw } : prev);
   const claimed = typeof raw === "object" && raw !== null && "draftsDir" in raw ? raw.draftsDir : undefined;
   if (typeof claimed === "string" && claimed !== host.config.draftsDir) {
     void host.connection.sendNotification("window/logMessage", {

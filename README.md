@@ -18,7 +18,7 @@ TypeScript and updates land without extension republishing:
 
 | Editor surface        | LSP mechanism                                        |
 | --------------------- | ---------------------------------------------------- |
-| Comment highlighting  | `textDocument/publishDiagnostics` (information)      |
+| Comment highlighting  | `textDocument/publishDiagnostics` (warning, configurable) |
 | Comment tooltips      | `textDocument/hover` (author, time, reactions, body) |
 | Reply / react / resolve | Code actions (`Ctrl-.` on a commented line)        |
 | New comment / reply / review submission | Draft files under `.pr-review/` — edit, then save **or** run `pr-review.postDrafts` |
@@ -56,6 +56,7 @@ for how Zed surfaces these to you.
     "settings": {
       "githubBaseUrl": "",        // GHE root, e.g. "https://ghe.example.com"
       "inlayHints": true,         // "◈ PR: N comments" badges
+      "annotationSeverity": "warning", // or "information" / "hint": editor-local only — Zed's project-wide diagnostics views cap at WARNING and drop milder severities
       "draftsDir": ".pr-review", // where draft files live (auto-added to .git/info/exclude; values inside .git/ are corrected to .pr-review)
       "pollIntervalMs": 30000     // background refresh interval
     }

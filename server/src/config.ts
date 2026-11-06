@@ -2,6 +2,8 @@
 // adapter under initializationOptions (`{ settings: { ... } }`) or
 // workspace/didChangeConfiguration.
 
+export type AnnotationSeverity = "warning" | "information" | "hint";
+
 export interface EffectiveConfig {
   /**
    * GitHub base URL override. Empty string means github.com.
@@ -13,6 +15,13 @@ export interface EffectiveConfig {
   githubBaseUrl: string;
   /** Render end-of-line inlay hint badges on commented lines. */
   inlayHints: boolean;
+  /**
+   * Severity of the per-line PR comment annotations. `warning` (default) so
+   * they appear in Zed's project-wide diagnostics views: Zed's panel caps at
+   * WARNING, so `information` and `hint` are editor-local only (underline,
+   * hover, scrollbar, GoToDiagnostic).
+   */
+  annotationSeverity: AnnotationSeverity;
   /** Directory (workspace-relative) holding draft files. Must be visible to
    *  the editor's worktree: values inside `.git/` are silently corrected to
    *  `.pr-review` because buffers under `.git/` never receive save or code
@@ -25,6 +34,7 @@ export interface EffectiveConfig {
 export const DEFAULT_CONFIG: EffectiveConfig = {
   githubBaseUrl: "",
   inlayHints: true,
+  annotationSeverity: "warning",
   draftsDir: ".pr-review",
   pollIntervalMs: 30_000,
 };
@@ -32,6 +42,7 @@ export const DEFAULT_CONFIG: EffectiveConfig = {
 interface RawSettings {
   githubBaseUrl?: unknown;
   inlayHints?: unknown;
+  annotationSeverity?: unknown;
   draftsDir?: unknown;
   pollIntervalMs?: unknown;
 }
@@ -50,6 +61,12 @@ export function configFromSettings(raw: unknown): EffectiveConfig {
   const cfg: EffectiveConfig = { ...DEFAULT_CONFIG };
   if (typeof s.githubBaseUrl === "string") cfg.githubBaseUrl = s.githubBaseUrl.replace(/\/+$/, "");
   if (typeof s.inlayHints === "boolean") cfg.inlayHints = s.inlayHints;
+  if (
+    s.annotationSeverity === "warning" ||
+    s.annotationSeverity === "information" ||
+    s.annotationSeverity === "hint"
+  )
+    cfg.annotationSeverity = s.annotationSeverity;
   if (typeof s.draftsDir === "string" && s.draftsDir.length > 0) cfg.draftsDir = sanitizeDraftsDir(s.draftsDir);
   if (typeof s.pollIntervalMs === "number" && s.pollIntervalMs > 0) cfg.pollIntervalMs = s.pollIntervalMs;
   return cfg;

@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resolveToken } from "../src/auth";
 import { parseGitHubRemote, resolveRepo } from "../src/git";
 import { GithubClient, parseReviewComment } from "../src/github";
-import type { EffectiveConfig } from "../src/config";
+import { DEFAULT_CONFIG, type EffectiveConfig } from "../src/config";
 import { emptyState, startFakeGithub, type FakeGithub } from "./fake-github";
 import { makeFixtureRepo, type FixtureRepo } from "./fixtures/repo";
 
 function cfgWith(baseUrl: string): EffectiveConfig {
-  return { githubBaseUrl: baseUrl, inlayHints: true, draftsDir: ".pr-review", pollIntervalMs: 30_000 };
+  return { ...DEFAULT_CONFIG, githubBaseUrl: baseUrl };
 }
 
 function seedComment(opts: {

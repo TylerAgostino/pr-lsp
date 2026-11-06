@@ -2,6 +2,7 @@ import { removeTree } from "./fixtures/rmtree";
 import * as fs from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TestClient } from "./client";
+import { CMD_REFRESH } from "../src/commands";
 import { emptyState, startFakeGithub, type FakeGithub } from "./fake-github";
 import { fixtureLines, makeFixtureRepo } from "./fixtures/repo";
 
@@ -99,11 +100,27 @@ describe("buffer annotations", () => {
     expect(c).toBeTruthy();
     expect(a!.range.start.line).toBe(4);
     expect(c!.range.start.line).toBe(19);
-    expect(a!.severity).toBe(3); // Information
+    expect(a!.severity).toBe(2); // Warning by default: Zed's project view caps at WARNING
     expect(a!.source).toBe("PR Review");
     expect(String(a!.message)).toContain("@octocat: rename this");
     expect(String(a!.message)).toContain("(replies: 1)");
     expect(String(c!.message)).toContain("@reviewer: explain line 20");
+  });
+
+  it("annotationSeverity setting republishes annotations at the chosen severity", async () => {
+    const sev = (want: number) =>
+      client.waitForNotification("textDocument/publishDiagnostics", (p) => {
+        const d = p as { uri: string; diagnostics: { severity?: number }[] };
+        return d.uri === uri && d.diagnostics.length === 2 && d.diagnostics.every((x) => x.severity === want);
+      });
+    const info = sev(3);
+    client.conn.sendNotification("workspace/didChangeConfiguration", { settings: { annotationSeverity: "information" } });
+    await client.execCommand(CMD_REFRESH, []);
+    await info;
+    const warn = sev(2);
+    client.conn.sendNotification("workspace/didChangeConfiguration", { settings: { annotationSeverity: "warning" } });
+    await client.execCommand(CMD_REFRESH, []);
+    await warn;
   });
 
   it("hover on a commented line returns the thread card; elsewhere null", async () => {

@@ -17,11 +17,14 @@ export interface PublishedDiagnostic {
 
 /**
  * Diagnostics for one file's threads (stale already filtered out).
- * One per thread: whole-line Information range, `PR Review` source.
+ * One per thread: whole-line range with the configured severity, `PR Review`
+ * source. Warning is the default: Zed's project-wide diagnostics views cap at
+ * WARNING and drop anything milder.
  */
 export function buildDiagnostics(
   lineLengths: number[],
   threads: AnchoredThread[],
+  severity: DiagnosticSeverity = DiagnosticSeverity.Warning,
 ): PublishedDiagnostic[] {
   const out: PublishedDiagnostic[] = [];
   for (const t of threads) {
@@ -31,7 +34,7 @@ export function buildDiagnostics(
     const replies = t.replies.length;
     const suffix = replies > 0 ? ` (replies: ${replies})` : "";
     out.push({
-      severity: DiagnosticSeverity.Information,
+      severity,
       source: "PR Review",
       range: { start: { line, character: 0 }, end: { line, character: lineLengths[line] } },
       message: `@${t.top.user?.login ?? "unknown"}: ${firstLine}${suffix}`,
