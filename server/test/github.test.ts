@@ -163,6 +163,21 @@ describe("git + github integration", () => {
     expect(fake.state.comments[0]).toMatchObject({ path: "src/bar.ts", line: 6, body: "why 2?" });
   });
 
+  it("fails fast with a clear message when GitHub cannot resolve the line", async () => {
+    const state = emptyState();
+    state.pathUnresolvable = true;
+    fake = await startFakeGithub(state);
+
+    const client = new GithubClient(cfgWith(fake.url), "fake-token");
+    await expect(
+      client.createReviewComment("testowner", "testrepo", 42, "why 6?", "src/bar.ts", 6),
+    ).rejects.toThrow(/inside the PR's diff/);
+
+    // The /reviews fallback would hit the same rejection — it must not run.
+    expect(fake.postsMatching(/pulls\/42\/reviews$/)).toHaveLength(0);
+    expect(fake.postsMatching(/pulls\/42\/comments$/)).toHaveLength(1);
+  });
+
   it("lists, removes own reactions, and deletes comments", async () => {
     const state = emptyState();
     state.comments.push(

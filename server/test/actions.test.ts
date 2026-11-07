@@ -98,6 +98,16 @@ async function waitUntil(fn: () => boolean, ms = 15_000): Promise<void> {
   }
 }
 
+function lastErrorMessage(): string {
+  const req = [...client.serverRequests].reverse().find((n) => n.method === "window/showMessageRequest");
+  const p = req?.params as { message?: string } | undefined;
+  return typeof p?.message === "string" ? p.message : "";
+}
+
+function commentDraftsOn(line: number): string[] {
+  if (!fs.existsSync(draftsDir())) return [];
+  return fs.readdirSync(draftsDir()).filter((n) => n.startsWith(`comment-${line}-`));
+}
 describe("code actions and drafts", () => {
   it("opens with two threads anchored", async () => {
     client.openDoc(filePath, fs.readFileSync(filePath, "utf8"));
@@ -256,6 +266,59 @@ describe("code actions and drafts", () => {
     const posted = fake.state.reviews.find((r) => r.event === "APPROVE");
     expect(posted).toBeTruthy();
     expect(fs.existsSync(draft)).toBe(false);
+  });
+  it("blocks a comment draft when the file is outside the PR diff", async () => {
+    fake.state.prFiles = [{ filename: "src/other.ts", patch: "@@ -1,2 +1,2 @@\n a\n-b\n+c" }];
+    try {
+      await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 25]);
+      expect(commentDraftsOn(25)).toEqual([]);
+      expect(lastErrorMessage()).toContain("isn't part of PR");
+    } finally {
+      fake.state.prFiles = undefined;
+    }
+  });
+
+  it("blocks a comment draft on a line outside every hunk", async () => {
+    fake.state.prFiles = [{ filename: "src/foo.ts", patch: "@@ -2,3 +2,3 @@\n a\n b\n c" }];
+    try {
+      await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 25]);
+      expect(commentDraftsOn(25)).toEqual([]);
+      expect(lastErrorMessage()).toContain("outside PR #42's diff");
+    } finally {
+      fake.state.prFiles = undefined;
+    }
+  });
+
+  it("creates the draft when the line sits inside a hunk", async () => {
+    fake.state.prFiles = [{ filename: "src/foo.ts", patch: "@@ -24,3 +24,3 @@\n a\n b\n c" }];
+    try {
+      await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 25]);
+      const drafts = commentDraftsOn(25);
+      expect(drafts.length).toBe(1);
+      fs.rmSync(path.join(draftsDir(), drafts[0]));
+    } finally {
+      fake.state.prFiles = undefined;
+    }
+  });
+
+  it("reports an unresolvable comment location without retrying via reviews", async () => {
+    fake.state.pathUnresolvable = true;
+    try {
+      await client.execCommand(CMD_CREATE_COMMENT_DRAFT, [uri, 26]);
+      const draft = commentDraftsOn(26);
+      expect(draft.length).toBe(1);
+      const draftPath = path.join(draftsDir(), draft[0]);
+      rewriteBody(draftPath, "unresolvable probe");
+      client.openDoc(draftPath, fs.readFileSync(draftPath, "utf8"));
+      client.saveDoc(draftPath);
+      await waitUntil(() =>
+        lastErrorMessage().includes("inside the PR's diff"),
+      );
+      expect(fake.postsMatching(/pulls\/42\/reviews$/).some((r) => JSON.stringify(r.body).includes("unresolvable probe"))).toBe(false);
+      fs.rmSync(draftPath, { force: true });
+    } finally {
+      fake.state.pathUnresolvable = false;
+    }
   });
 
   it("delete command removes the comment upstream", async () => {

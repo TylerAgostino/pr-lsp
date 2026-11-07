@@ -248,7 +248,7 @@ export function wireLifecycle(host: ServerHost): void {
             break;
           }
           const rel = state.relativePath(String(args[0]));
-          if (rel) state.createCommentDraft(rel, Number(args[1]));
+          if (rel) await state.createCommentDraft(rel, Number(args[1]));
           break;
         }
         case CMD_DRAFT_REVIEW:

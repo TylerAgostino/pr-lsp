@@ -407,8 +407,19 @@ export class AppState {
     return file;
   }
 
-  createCommentDraft(relPath: string, line: number): string | null {
+  async createCommentDraft(relPath: string, line: number): Promise<string | null> {
     if (!this.pr || !this.repo) return null;
+    // GitHub rejects inline comments outside the PR diff with an opaque
+    // "Path could not be resolved" 422; validate up front and explain.
+    const client = this.client();
+    if (client) {
+      const { owner, repo } = this.remote();
+      const reason = await client.checkCommentTarget(owner, repo, this.pr.number, relPath, line);
+      if (reason) {
+        this.error(reason);
+        return null;
+      }
+    }
     const file = writeDraft(
       draftDir(this.repo.root, this.host.config.draftsDir),
       { type: "comment", pr: this.pr.number, path: relPath, line },

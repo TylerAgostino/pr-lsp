@@ -114,7 +114,15 @@ menu on a comment line covers react/reply/resolve/view, and selection →
 
 Writing is deliberately file-based so you can compose in the editor:
 
-1. Trigger a draft (code action or palette command).
+1. Trigger a draft (code action or palette command). For inline comment
+   drafts the server first checks the target against the PR's diff
+   (`GET …/pulls/N/files`): if the file isn't changed by the PR or the line
+   lies outside every hunk, no draft is written — GitHub would reject the
+   post with its opaque `422 Path could not be resolved` — and an error
+   notification explains which lines are commentable. Use
+   `pr-review.draftReview` for feedback on unchanged code. (The check fails
+   open when the files endpoint is unavailable; GitHub stays the arbiter.
+   A post that races a PR update still gets the same explanation.)
 2. A Markdown file appears under **`.pr-review/`** at the project root,
    with frontmatter (`type`, `pr`, and for inline comments `path` +
    `line`, or `event` for reviews) and a seed body. The folder is added

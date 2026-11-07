@@ -35,6 +35,10 @@ export interface FakeState {
   /** When true, GET /user answers 500 (identity-lookup retry testing). */
   userFails?: boolean;
   comments: Record<string, unknown>[];
+  /** Served by GET /pulls/{n}/files; undefined makes that endpoint 404 (client fails open). */
+  prFiles?: { filename: string; patch?: string | null }[];
+  /** When true, POST /pulls/{n}/comments answers the GitHub "unresolvable line" 422. */
+  pathUnresolvable?: boolean;
   reviews: Record<string, unknown>[];
   threads: FakeThread[];
   nextCommentId: number;
@@ -108,6 +112,15 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
       return json(res, 200, out);
     }
 
+    const fm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/files$/.exec(path);
+    if (fm && method === "GET") {
+      if (state.prFiles === undefined) return json(res, 404, { message: "Fake: files endpoint disabled" });
+      return json(
+        res,
+        200,
+        state.prFiles.map((f) => ({ filename: f.filename, patch: f.patch === undefined ? null : f.patch })),
+      );
+    }
     let mm = /^\/api\/v3\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/comments$/.exec(path);
     if (mm && method === "GET") {
       const n = Number(mm[1]);
@@ -119,6 +132,12 @@ export async function startFakeGithub(state: FakeState): Promise<FakeGithub> {
     }
     if (mm && method === "POST") {
       const n = Number(mm[1]);
+      if (state.pathUnresolvable) {
+        return json(res, 422, {
+          message: "Validation Failed",
+          errors: [{ resource: "PullRequestComment", code: "custom", field: "line", message: "Line could not be resolved" }],
+        });
+      }
       if (state.rejectDirectComments) {
         return json(res, 422, { message: "Fake: direct line-note endpoint rejected" });
       }

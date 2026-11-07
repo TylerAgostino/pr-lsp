@@ -49,6 +49,25 @@ function parseHunk(hunk: string): HunkEntry[] {
   return entries;
 }
 
+/**
+ * Right-side (new file) line ranges covered by the `@@` headers of a
+ * unified diff/patch. A comment posted to GitHub must land inside one of
+ * these ranges (or on an added line), otherwise the API answers
+ * `422: Path could not be resolved`.
+ */
+export function hunkRanges(diff: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  for (const line of diff.split(/\r?\n/)) {
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (!m) continue;
+    const start = Number(m[1]);
+    const count = m[2] === undefined ? 1 : Number(m[2]);
+    if (count === 0) continue;
+    out.push({ start, end: start + count - 1 });
+  }
+  return out;
+}
+
 const eq = (a: string, b: string): boolean => a.trim() === b.trim();
 
 /**

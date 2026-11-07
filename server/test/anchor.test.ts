@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorToBuffer } from "../src/anchor";
+import { anchorToBuffer, hunkRanges } from "../src/anchor";
 import { fixtureLines } from "./fixtures/repo";
 
 const HEAD = "aaaa";
@@ -71,5 +71,24 @@ describe("anchorToBuffer", () => {
       true,
     );
     expect(a).toEqual({ state: "line", line: 20 }); // base[19] now at index 20
+  });
+});
+
+describe("hunkRanges", () => {
+  it("maps @@ headers to right-side ranges (multi-hunk, omitted counts, CRLF)", () => {
+    const diff = [
+      "@@ -1,0 +1,3 @@",
+      " a",
+      " b",
+      " c",
+      "@@ -40 +41,2 @@ fn",
+      " d",
+      " e",
+      "@@ -9 +10,0 @@",
+    ].join("\r\n");
+    expect(hunkRanges(diff)).toEqual([
+      { start: 1, end: 3 },
+      { start: 41, end: 42 },
+    ]);
   });
 });

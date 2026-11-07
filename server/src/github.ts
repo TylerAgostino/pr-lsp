@@ -1,4 +1,5 @@
 import { apiRoot, type EffectiveConfig } from "./config";
+import { hunkRanges } from "./anchor";
 import { isRecord, optNum, str } from "./boundary";
 
 export class GithubApiError extends Error {
@@ -174,6 +175,68 @@ export class GithubClient {
     return out;
   }
 
+  /**
+   * Files (with patches) in a PR's diff, for validating inline-comment
+   * targets. `complete` is false when pagination stopped early, in which
+   * case a missing filename proves nothing. Null on any API failure —
+   * callers must fail open (posting still works; GitHub itself validates).
+   */
+  async listPrFiles(
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<{ files: { filename: string; patch: string | null }[]; complete: boolean } | null> {
+    const files: { filename: string; patch: string | null }[] = [];
+    let complete = true;
+    try {
+      for (let page = 1; page <= 5; page += 1) {
+        const url = `${this.repoBase(owner, repo)}/pulls/${prNumber}/files?per_page=100&page=${page}`;
+        const data = await http("GET", url, this.token);
+        if (!Array.isArray(data)) break;
+        for (const f of data) {
+          if (!isRecord(f) || typeof f.filename !== "string") continue;
+          files.push({
+            filename: f.filename,
+            patch: typeof f.patch === "string" ? f.patch : null,
+          });
+        }
+        if (data.length < 100) break;
+        if (page === 5) complete = false;
+      }
+    } catch {
+      return null;
+    }
+    return { files, complete };
+  }
+
+  /**
+   * Validate an inline-comment target against the PR diff. Returns a
+   * human-readable rejection reason, or null when the target is fine.
+   * Fails open (null) when the files endpoint is unavailable or the diff
+   * is too large to be authoritative — GitHub remains the final arbiter.
+   */
+  async checkCommentTarget(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    path: string,
+    line: number,
+  ): Promise<string | null> {
+    const res = await this.listPrFiles(owner, repo, prNumber);
+    if (!res) return null;
+    const entry = res.files.find((f) => f.filename.replace(/\\/g, "/") === path);
+    if (!entry) {
+      return res.complete
+        ? `"${path}" isn't part of PR #${prNumber} — GitHub only attaches inline comments to files changed by the PR. For general feedback use "PR: Draft review".`
+        : null;
+    }
+    if (entry.patch === null) return null; // patch omitted (too large): unknowable here
+    const ranges = hunkRanges(entry.patch);
+    if (ranges.length === 0 || ranges.some((r) => line >= r.start && line <= r.end)) return null;
+    const shown = ranges.slice(0, 8).map((r) => (r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`)).join(", ");
+    return `line ${line} of ${path} is outside PR #${prNumber}'s diff (changed regions: ${shown}); GitHub comments must sit on a changed line or its surrounding context.`;
+  }
+
   /** All reviews on a PR (newest kept per submitter by callers). */
   async listReviews(owner: string, repo: string, prNumber: number): Promise<ReviewSummary[]> {
     const url = `${this.repoBase(owner, repo)}/pulls/${prNumber}/reviews?per_page=100`;
@@ -220,6 +283,13 @@ export class GithubClient {
       await http("POST", `${this.repoBase(owner, repo)}/pulls/${prNumber}/comments`, this.token, { body, path, line, side: "RIGHT" });
     } catch (e) {
       if (e instanceof GithubApiError && e.status === 422) {
+        // "Path could not be resolved" is a diff-membership rejection: the
+        // /reviews fallback would fail identically. Say what GitHub means.
+        if (/could not be resolved|not resolve|invalid/i.test(e.bodyText)) {
+          throw new Error(
+            `GitHub could not attach the comment to ${path}:${line} — inline comments must be on lines inside the PR's diff (changed lines or their context). ${e.bodyText.slice(0, 160)}`,
+          );
+        }
         await http("POST", `${this.repoBase(owner, repo)}/pulls/${prNumber}/reviews`, this.token, {
           event: "COMMENT",
           comments: [{ path, line, side: "RIGHT", body }],
