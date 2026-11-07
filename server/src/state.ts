@@ -612,14 +612,16 @@ export class AppState {
   }
 
   /**
-   * Auto-publish safety net: some clients do not reliably route buffer
-   * saves for drafts-dir files to language servers (confirmed on Zed/macOS
-   * for workspace-visible `.pr-review/` too), so a draft that is edited
-   * past its seed template and has sat idle on disk for `draftSettleMs`
-   * committed and posted by the poll. The didSave path stays as the fast
-   * lane; `posting` prevents overlap and a vanished file is a no-op.
-   * Permanently broken drafts (bad frontmatter, wrong PR, API rejection)
-   * warn once per mtime — editing and saving again retries them.
+   * Auto-publish safety net. In the field, edited drafts sat unposted in
+   * the workspace-visible `.pr-review/` (Zed/macOS); whether the client
+   * delivered `didSave` for them is unconfirmed — check the server log
+   * for `didSave received for draft:` lines. Either way, a draft edited
+   * past its seed template and idle on disk for `draftSettleMs` is
+   * treated as committed and posted by the poll. The didSave path stays
+   * as the fast lane (posts immediately, no settle window); `posting`
+   * prevents overlap and a vanished file is a no-op. Permanently broken
+   * drafts (bad frontmatter, wrong PR, API rejection) warn once per
+   * mtime — editing and saving again retries them.
    */
   private async autoPostStaleDrafts(): Promise<void> {
     if (!this.repo) return;

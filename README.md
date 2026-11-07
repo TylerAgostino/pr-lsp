@@ -59,7 +59,7 @@ for how Zed surfaces these to you.
       "annotationSeverity": "warning", // or "information" / "hint": editor-local only — Zed's project-wide diagnostics views cap at WARNING and drop milder severities
       "draftsDir": ".pr-review", // where draft files live (auto-added to .git/info/exclude; values inside .git/ are corrected to .pr-review)
       "pollIntervalMs": 30000,    // background refresh interval
-      "draftSettleMs": 45000,    // edited drafts idle on this long are auto-published (0 = immediately on next poll; huge = never — rely on save/command)
+      "draftSettleMs": 45000,    // poll fallback only: auto-publish an edited draft idle on disk this long (0 = next poll; huge = disable auto-publish). Saves never wait for this — they post immediately
     }
   }
 }
@@ -122,22 +122,25 @@ Writing is deliberately file-based so you can compose in the editor:
    `git status` and is never committed.
 3. Edit it. Any disk write is the commit signal — posting happens via:
    - **Save the file** in the editor (fastest — posts immediately when your
-     editor routes saves to language servers),
+     editor routes saves to language servers). The save path has **no settle
+     window**: a save posts at once; `draftSettleMs` gates only the poll.
    - **automatically** by the background poll once the edited draft has sat
      on disk untouched for `draftSettleMs` (default 45s). This is a safety
-     net for editors that don't deliver save events for these files (Zed on
-     macOS, other LSP clients), and it also covers drafts edited outside the
-     editor. Unsaved editor buffers are never posted — only what's on disk.
+     net for editors that don't deliver save events for these files (seen on
+     Zed/macOS — exact cause still under investigation), and covers drafts
+     edited outside the editor. Unsaved editor buffers are never posted — only
+     what's on disk.
    - run **`pr-review.postDrafts`** (palette) to post every edited draft on
      disk right now, or open one and run the **Publish this draft to
      GitHub** code action (`Ctrl-.` / `Cmd-.` on any line).
 
 The server posts, deletes the file, and refreshes annotations. Untouched
 seed templates are never posted by any path. Posting commits the draft's
-text *as it is on disk*: with editor autosave on, losing focus can commit
-a half-finished comment after `draftSettleMs`. To pick the commit moment
-yours, raise `draftSettleMs` (or disable autosave while editing drafts)
-and run `pr-review.postDrafts` when it reads right.
+text *as it is on disk*: with editor autosave on, losing focus can commit a
+half-finished draft — immediately (autosave fires a save) when the save
+reaches the server, after `draftSettleMs` via the poll otherwise. To pick
+the commit moment yours, disable autosave while editing drafts and run
+`pr-review.postDrafts` when it reads right.
 
 If posting fails you'll get an error notification (`pr-review: failed to
 post …`) — common causes: a fine-grained PAT without **Pull requests:

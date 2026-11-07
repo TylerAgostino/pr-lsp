@@ -52,7 +52,7 @@ beforeAll(async () => {
   fake.state.comments.push(seedComment({ id: 11, body: "rename this", line: 5 }));
   process.env.GITHUB_TOKEN = "faketoken";
   client = new TestClient(dir);
-  await client.initialize({ githubBaseUrl: fake.url, pollIntervalMs: 250, draftSettleMs: 300 });
+  await client.initialize({ githubBaseUrl: fake.url, pollIntervalMs: 250 });
 });
 
 afterAll(async () => {
@@ -146,6 +146,8 @@ describe("background poll", () => {
       f,
       ["---", "type: comment", "pr: 43", "path: src/foo.ts", "line: 3", "---", "", "auto-publish from disk body"].join("\n"),
     );
+    const old = new Date(Date.now() - 46_000); // past the default 45s settle window
+    fs.utimesSync(f, old, old);
     const has = () =>
       fake.state.comments.some((c: { body?: string }) => String(c.body).includes("auto-publish from disk body"));
     const deadline = Date.now() + 15_000;
