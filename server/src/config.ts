@@ -29,6 +29,10 @@ export interface EffectiveConfig {
   draftsDir: string;
   /** Milliseconds between background .git/HEAD checks (branch switch refresh). */
   pollIntervalMs: number;
+  /** A draft edited past its seed and untouched on disk for this many
+   *  milliseconds is treated as committed and auto-published by the poll
+   *  (clients that never deliver didSave for draft files still get posts). */
+  draftSettleMs: number;
 }
 
 export const DEFAULT_CONFIG: EffectiveConfig = {
@@ -37,6 +41,7 @@ export const DEFAULT_CONFIG: EffectiveConfig = {
   annotationSeverity: "warning",
   draftsDir: ".pr-review",
   pollIntervalMs: 30_000,
+  draftSettleMs: 45_000,
 };
 
 interface RawSettings {
@@ -45,6 +50,7 @@ interface RawSettings {
   annotationSeverity?: unknown;
   draftsDir?: unknown;
   pollIntervalMs?: unknown;
+  draftSettleMs?: unknown;
 }
 
 /**
@@ -69,6 +75,7 @@ export function configFromSettings(raw: unknown): EffectiveConfig {
     cfg.annotationSeverity = s.annotationSeverity;
   if (typeof s.draftsDir === "string" && s.draftsDir.length > 0) cfg.draftsDir = sanitizeDraftsDir(s.draftsDir);
   if (typeof s.pollIntervalMs === "number" && s.pollIntervalMs > 0) cfg.pollIntervalMs = s.pollIntervalMs;
+  if (typeof s.draftSettleMs === "number" && s.draftSettleMs >= 0) cfg.draftSettleMs = s.draftSettleMs;
   return cfg;
 }
 

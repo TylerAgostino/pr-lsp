@@ -26,7 +26,7 @@ export class AppState {
   private running = false;
   private followUp = false;
   private loginCache: Promise<string | null> | null = null;
-  private warnedDrafts = new Set<string>();
+  private warnedDrafts = new Map<string, number>();
   private posting = new Set<string>();
   constructor(readonly host: ServerHost) {}
 
@@ -290,7 +290,7 @@ export class AppState {
     try {
       await this.refresh(true);
       await this.publishAll();
-      this.checkStuckDrafts();
+      void this.autoPostStaleDrafts();
     } catch (e) {
       this.log(`background refresh failed: ${String(e instanceof Error ? e.message : e)}`);
     } finally {
@@ -611,8 +611,17 @@ export class AppState {
     }
   }
 
-  /** Diagnostics only — never posts: nudge about edited-but-unposted drafts. */
-  private checkStuckDrafts(): void {
+  /**
+   * Auto-publish safety net: some clients do not reliably route buffer
+   * saves for drafts-dir files to language servers (confirmed on Zed/macOS
+   * for workspace-visible `.pr-review/` too), so a draft that is edited
+   * past its seed template and has sat idle on disk for `draftSettleMs`
+   * committed and posted by the poll. The didSave path stays as the fast
+   * lane; `posting` prevents overlap and a vanished file is a no-op.
+   * Permanently broken drafts (bad frontmatter, wrong PR, API rejection)
+   * warn once per mtime — editing and saving again retries them.
+   */
+  private async autoPostStaleDrafts(): Promise<void> {
     if (!this.repo) return;
     const dir = draftDir(this.repo.root, this.host.config.draftsDir);
     let names: string[];
@@ -624,18 +633,18 @@ export class AppState {
     for (const name of names) {
       if (!DRAFT_FILE_RE.test(name)) continue;
       const f = path.join(dir, name);
-      if (this.posting.has(f) || this.warnedDrafts.has(f)) continue;
+      if (this.posting.has(f)) continue;
+      let mtime: number;
       try {
-        if (Date.now() - fs.statSync(f).mtimeMs < 45_000) continue;
-        const parsed = parseDraft(fs.readFileSync(f, "utf8"));
-        if (!parsed || isUneditedDraft(parsed.meta, parsed.body)) continue;
+        mtime = fs.statSync(f).mtimeMs;
       } catch {
         continue;
       }
-      this.warnedDrafts.add(f);
-      void this.host.connection.window.showInformationMessage(
-        `pr-review: unposted draft "${name}" (in ${dir}) — save it, open it and run "Publish this draft to GitHub" (code action), or run pr-review.postDrafts`,
-      );
+      if (Date.now() - mtime < Math.max(0, this.host.config.draftSettleMs)) continue;
+      if (this.warnedDrafts.get(f) === mtime) continue;
+      this.warnedDrafts.set(f, mtime);
+      const result = await this.postDraftFile(f, true);
+      if (result === "posted") this.log(`auto-published settled draft ${name}`);
     }
   }
 }

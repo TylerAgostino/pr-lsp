@@ -21,7 +21,7 @@ TypeScript and updates land without extension republishing:
 | Comment highlighting  | `textDocument/publishDiagnostics` (warning, configurable) |
 | Comment tooltips      | `textDocument/hover` (author, time, reactions, body) |
 | Reply / react / resolve | Code actions (`Ctrl-.` on a commented line)        |
-| New comment / reply / review submission | Draft files under `.pr-review/` — edit, then save **or** run `pr-review.postDrafts` |
+| New comment / reply / review submission | Draft files under `.pr-review/` — edit, then save (auto-publishes if your editor never routes the save; see "Draft files") |
 | Command palette actions | `workspace/executeCommand`                       |
 | "PR: N comments" badges | Inlay hints (toggle via `inlayHints`)              |
 
@@ -58,7 +58,8 @@ for how Zed surfaces these to you.
       "inlayHints": true,         // "◈ PR: N comments" badges
       "annotationSeverity": "warning", // or "information" / "hint": editor-local only — Zed's project-wide diagnostics views cap at WARNING and drop milder severities
       "draftsDir": ".pr-review", // where draft files live (auto-added to .git/info/exclude; values inside .git/ are corrected to .pr-review)
-      "pollIntervalMs": 30000     // background refresh interval
+      "pollIntervalMs": 30000,    // background refresh interval
+      "draftSettleMs": 45000,    // edited drafts idle on this long are auto-published (0 = immediately on next poll; huge = never — rely on save/command)
     }
   }
 }
@@ -119,27 +120,30 @@ Writing is deliberately file-based so you can compose in the editor:
    `line`, or `event` for reviews) and a seed body. The folder is added
    to `.git/info/exclude` automatically, so it never appears in
    `git status` and is never committed.
-3. Edit it, then post it with any explicit signal:
-   - **Save the file** in the editor, or
-   - run **`pr-review.postDrafts`** (palette), which posts every edited
-     draft on disk — useful when your editor doesn't route buffer saves
-     to the language server, or you edited drafts outside it.
-   - open the draft file and run the **Publish this draft to GitHub** code
-     action (`Ctrl-.` / `Cmd-.` on any line).
+3. Edit it. Any disk write is the commit signal — posting happens via:
+   - **Save the file** in the editor (fastest — posts immediately when your
+     editor routes saves to language servers),
+   - **automatically** by the background poll once the edited draft has sat
+     on disk untouched for `draftSettleMs` (default 45s). This is a safety
+     net for editors that don't deliver save events for these files (Zed on
+     macOS, other LSP clients), and it also covers drafts edited outside the
+     editor. Unsaved editor buffers are never posted — only what's on disk.
+   - run **`pr-review.postDrafts`** (palette) to post every edited draft on
+     disk right now, or open one and run the **Publish this draft to
+     GitHub** code action (`Ctrl-.` / `Cmd-.` on any line).
 
-The server posts, deletes the file, and refreshes annotations. Nothing
-posts itself — only a save or the command does, and untouched seed
-templates are ignored by both paths. A save posts the draft's text
-*as-is*, though: with editor autosave on, losing focus can commit a
-half-finished comment like any other file. To pick the commit moment
-yours, compose freely and run `pr-review.postDrafts` when it reads right
-(or disable autosave while editing drafts).
+The server posts, deletes the file, and refreshes annotations. Untouched
+seed templates are never posted by any path. Posting commits the draft's
+text *as it is on disk*: with editor autosave on, losing focus can commit
+a half-finished comment after `draftSettleMs`. To pick the commit moment
+yours, raise `draftSettleMs` (or disable autosave while editing drafts)
+and run `pr-review.postDrafts` when it reads right.
 
 If posting fails you'll get an error notification (`pr-review: failed to
 post …`) — common causes: a fine-grained PAT without **Pull requests:
 Write** permission (reads still work!), or a classic token missing the
-`repo` scope. If a draft sits on disk for 45+ seconds after you edited
-it, the server also nudges you about it.
+`repo` scope. Broken drafts warn once per edit (they aren't retried until
+you change them); fix the file and save to try again.
 
 ### See every comment across all files
 

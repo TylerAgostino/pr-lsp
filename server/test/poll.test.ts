@@ -1,7 +1,9 @@
 import { removeTree } from "./fixtures/rmtree";
 import { execFileSync } from "node:child_process";
+import * as path from "node:path";
 import * as fs from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { draftSeedBody } from "../src/drafts";
 import { TestClient } from "./client";
 import { emptyState, startFakeGithub, type FakeGithub } from "./fake-github";
 import { makeFixtureRepo } from "./fixtures/repo";
@@ -50,7 +52,7 @@ beforeAll(async () => {
   fake.state.comments.push(seedComment({ id: 11, body: "rename this", line: 5 }));
   process.env.GITHUB_TOKEN = "faketoken";
   client = new TestClient(dir);
-  await client.initialize({ githubBaseUrl: fake.url, pollIntervalMs: 250 });
+  await client.initialize({ githubBaseUrl: fake.url, pollIntervalMs: 250, draftSettleMs: 300 });
 });
 
 afterAll(async () => {
@@ -119,4 +121,36 @@ describe("background poll", () => {
     );
     expect(diagsWith("rename this")).toBe(false);
   }, 30_000);
+
+  it("never auto-publishes untouched seed drafts", async () => {
+    const ddir = path.join(dir, ".pr-review");
+    fs.mkdirSync(ddir, { recursive: true });
+    const f = path.join(ddir, "comment-9.md");
+    fs.writeFileSync(
+      f,
+      ["---", "type: comment", "pr: 43", "path: src/foo.ts", "line: 9", "---", ""].join("\n") +
+        draftSeedBody("comment", { path: "src/foo.ts", line: 9 }),
+    );
+    const before = fake.state.comments.length;
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(fake.state.comments.length).toBe(before);
+    expect(fs.existsSync(f)).toBe(true);
+    fs.rmSync(f);
+  });
+
+  it("auto-publishes an edited draft sitting on disk without didSave", async () => {
+    const ddir = path.join(dir, ".pr-review");
+    fs.mkdirSync(ddir, { recursive: true });
+    const f = path.join(ddir, "comment-10.md");
+    fs.writeFileSync(
+      f,
+      ["---", "type: comment", "pr: 43", "path: src/foo.ts", "line: 3", "---", "", "auto-publish from disk body"].join("\n"),
+    );
+    const has = () =>
+      fake.state.comments.some((c: { body?: string }) => String(c.body).includes("auto-publish from disk body"));
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && !has()) await new Promise((r) => setTimeout(r, 100));
+    expect(has()).toBe(true);
+    expect(fs.existsSync(f)).toBe(false);
+  });
 });

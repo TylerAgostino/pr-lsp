@@ -26,7 +26,7 @@ import {
   CMD_VIEW_ON_GITHUB,
   REACTIONS,
 } from "./commands";
-import { configFromSettings, type EffectiveConfig } from "./config";
+import { configFromSettings, DEFAULT_CONFIG, type EffectiveConfig } from "./config";
 import { buildHoverMarkdown } from "./hover";
 import { draftDir, DRAFT_FILE_RE, isDraftPath } from "./drafts";
 import { buildInlayHints } from "./inlayhints";
@@ -57,7 +57,7 @@ export function createHost(): ServerHost {
   return {
     connection,
     documents,
-    config: { githubBaseUrl: "", inlayHints: true, annotationSeverity: "warning", draftsDir: ".pr-review", pollIntervalMs: 30_000 },
+    config: { ...DEFAULT_CONFIG },
     workspaceRoot: null,
   };
 }
